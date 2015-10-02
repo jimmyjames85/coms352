@@ -236,6 +236,15 @@ int main(int argc, char * argv[])
 		    cur = cur->next;
 	       }
 	       printf("\r\nList complete.\r\n");
+	       printf("\r\nReleasing list...\r\n");
+	       
+	       cur = list;
+	       while(cur!=NULL)
+	       {
+		    anode *parent = cur;
+		    cur = cur->next;
+		    free(parent);
+	       }
 	  }
 	  else if(strstr(cmd, "fork")==cmd)	  
 	  {
