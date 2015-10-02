@@ -268,7 +268,8 @@ int main(int argc, char * argv[])
 	       {
 		    isChild=1;
 		    printf("I'm a new child\r\n");
-		    char * argv[]={"hi",NULL};
+		    const char * argv[]={"hi",NULL};
+		    execl("ls", "ls", (char *) NULL);
 	       }
 	       else /* parent */
 	       {
