@@ -33,17 +33,12 @@ void debug(char * msg)
  */
 anode *new_anode()
 {
-     
-     debug("creating new node...\n");
      anode *newanode = (anode *) malloc(sizeof(anode)); 
      if(newanode!=NULL)
      {
 	  newanode->arg = NULL;
 	  newanode->next = NULL;
-	  debug("initializing new node...\n");
      }
-     else
-	  debug("returning NULL node\n");
      return newanode;
 }
 char * eatWhiteSpace(char * s)
@@ -64,74 +59,54 @@ char * eatWhiteSpace(char * s)
  */
 anode *arg_to_linked_list(char * cmd)
 {
-     char inside=0; /* determines if we are inside a quote(1) or a cmd(2)"*/
      char *c = cmd; /* the current character we are processing */   
      anode *head = new_anode();
      if(head==NULL) return head; /* failure */
 
      anode *tail = head;
-
-
-     c = eatWhiteSpace(c);
-     char *ab = c; /* argument begining */
+     char *ab; /*argument begining*/
 
      while(*c != '\0')
      {
 	  c = eatWhiteSpace(c);
-	  ab = c;
-	  printf("   %s\r\n",ab);
-	  
+	  ab = c; /* argument begining */
 	  if(*c=='"')
 	  {
-	       c++;
-	       ab = c; /* after the quote */
+	       c++;/* after the quote */
+	       ab = c; 
 	       while(*c!='"' && *c!='\0')
 		    c++;
+	       
 	       /*c points to end of quoted argument */
 	  }
 	  else
 	  {
 	       int i=0;
 	       while((*c)!=' ' && (*c)!='\0')
-	       {
-		    printf("%d:%s\n",i++,c);
-		    printf("%c\n",*c);
 		    c++;
-		    printf("'%c'\n",*c);
-	       }
-	       
-
-	       printf("exit\n");
 	       /*c points to end of unquoted argument */
 	  }
-	  printf("exited\n");
-	  printf("exiteda\n");
 
 	  if((*c) != '\0')
 	  {
-	       printf("exitedb");
-
-	       /* *c='\0'; 
-	       printf("2");
+	       *c = '\0';
 	       c++;
-	       printf("3");*/
 	  }
 
-	  printf("Extracted: '%s' to '%s'\n",ab,c);
-	  printf("4");
-	  tail->next = new_anode();
-	  if(tail->next==NULL)
-	  {
-	       printf("NULLERROR");
-	       /* TODO dealloc the rest of the anodes */
-	       return head; /* failure */
-	  }
 	  tail->arg = ab;
-	  
+	  if(*c != '\0') 
+	  {
+	       //we have more to parse
+	       tail->next = new_anode();
+	       if(tail->next==NULL)
+	       {
+		    /* TODO dealloc the rest of the anodes */
+		    return head; /* failure */
+	       }
+	  }
 	  tail = tail->next;
-
-
      }
+     
      return head;
 }
 
@@ -250,11 +225,14 @@ int main(int argc, char * argv[])
 	  if(strstr(cmd, "cmd")==cmd)	  
 	  {
 	       //TODO test cmd_to
-	       anode *list = arg_to_linked_list("     hello there sir this is a list");
+
+	       char * tmpStr = (char *) malloc(256 * sizeof(char));
+	       sprintf(tmpStr, "%s","   \"    uh oh\"  hello there sir this is a list");
+	       anode *list = arg_to_linked_list(tmpStr);
 	       anode *cur = list;
 	       while(cur!=NULL)
 	       {
-		    printf("%s ", cur->arg);
+		    printf("'%s', ", cur->arg);
 		    cur = cur->next;
 	       }
 	       printf("\r\nList complete.\r\n");
