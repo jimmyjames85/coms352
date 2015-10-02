@@ -110,6 +110,7 @@ anode *arg_to_linked_list(char * cmd)
      return head;
 }
 
+
 /**
  * Reads in a line from a file until it reaches a CR,LF, or a CRLF.
  * Removes the CR,LF,or CRLF and replaces it with '\0'
@@ -203,6 +204,8 @@ int readl(char** line)
 }
 
 
+
+
 int main(int argc, char * argv[])
 {
 
@@ -255,11 +258,13 @@ int main(int argc, char * argv[])
 	       {
 		    isChild=1;
 		    printf("I'm a new child\r\n");
-		    const char * argv[]={"hi",NULL};
-		    execl("ls", "ls", (char *) NULL);
+		    const char * args[]={"ls",(char *)NULL};
+		    execl("ls", args);
+		    printf("executed execl\n");
 	       }
 	       else /* parent */
 	       {
+		    int i;
 		    printf("Waiting for pid(%d) to finish...\r\n",p);
 		    int status;
 		    waitpid(p, &status, 0);
@@ -278,6 +283,17 @@ int main(int argc, char * argv[])
 
      }
 
+/*     void bprintf(const char * fmt, ...)
+     {
+	  char buffer[];
+	  va_list args;
+	  va_start(args, fmt);
+	  vsprintf(buffer, fmt, args);
+	  sendString(buffer);
+	  va_end(args);
+     }
+*/
+     
 /*
   char * inputString = ((char *)malloc((sizeof(char)*INPUT_STRING_BUFFER_SIZE)));
   *inputString = '\0';
