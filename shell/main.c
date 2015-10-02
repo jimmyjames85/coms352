@@ -110,6 +110,30 @@ anode *arg_to_linked_list(char * cmd)
      return head;
 }
 
+char ** arg_linked_list_to_char_arr(anode * head)
+{
+     int i = 0;
+     anode * cur=head;
+     while(cur!=NULL)
+     {
+	  i++;
+	  cur=cur->next;
+     }
+     i++; //for NULL
+
+     char** arr = malloc(sizeof(char**)*i);
+     i=0;
+     cur=head;
+     while(cur!=NULL)
+     {
+	  *(arr+i)=cur->arg;
+	  cur=cur->next;
+	  i++;
+     }
+
+     *(arr+i)=NULL;
+     return arr;
+}
 
 /**
  * Reads in a line from a file until it reaches a CR,LF, or a CRLF.
@@ -203,7 +227,49 @@ int readl(char** line)
      return fpreadl(stdin, line);
 }
 
+int execute(const char *file, char *const  args[])
+{
+     char isChild = 0;     
+     pid_t p = fork();
+     if(p == -1) /* TODO handle error*/
+	  printf("Unable to fork\r\n");
+     else if(p==0) /* child */
+     {
+	  isChild=1;
+	  int err = execvp(file, args);
+	  printf("Error(%d) occured executing: %s\n", err, file);
+	  exit(0);
+     }
+     else /* parent */
+     {
+	  signed int status;
+	  waitpid(p, &status, 0);
+	  //printf("\npid(%d) finished with status=%d\r\n",p,status);
+     }
+}
 
+
+freeANodeList(anode * head)
+{
+     /* Releasing list */
+     anode *cur = head;
+     while(cur!=NULL)
+     {
+	  anode *parent = cur;
+	  cur = cur->next;
+	  free(parent);
+     }
+}
+printANodeList(anode * head)
+{
+     anode * cur = head;
+     while(cur!=NULL)
+     {
+	  printf("%s ", cur->arg);
+	  cur = cur->next;
+     }
+     printf("\n");
+}
 
 
 int main(int argc, char * argv[])
@@ -225,73 +291,34 @@ int main(int argc, char * argv[])
 	       keepGoing=0;
 	       continue;
 	  }
-	  if(strstr(cmd, "cmd")==cmd)	  
-	  {
-	       //TODO test cmd_to
-
-	       char * tmpStr = (char *) malloc(256 * sizeof(char));
-	       sprintf(tmpStr, "%s","   \"    uh oh\"  hello there sir this is a list");
-	       anode *list = arg_to_linked_list(tmpStr);
-	       anode *cur = list;
-	       while(cur!=NULL)
-	       {
-		    printf("'%s', ", cur->arg);
-		    cur = cur->next;
-	       }
-	       printf("\r\nList complete.\r\n");
-	       printf("\r\nReleasing list...\r\n");
-	       
-	       cur = list;
-	       while(cur!=NULL)
-	       {
-		    anode *parent = cur;
-		    cur = cur->next;
-		    free(parent);
-	       }
-	  }
-	  else if(strstr(cmd, "fork")==cmd)	  
-	  {
-	       pid_t p = fork();
-	       if(p == -1) /* TODO handle error*/
-		    printf("Unable to fork\r\n");
-	       else if(p==0) /* child */
-	       {
-		    isChild=1;
-		    printf("I'm a new child\r\n");
-		    const char * args[]={"ls",(char *)NULL};
-		    execl("ls", args);
-		    printf("executed execl\n");
-	       }
-	       else /* parent */
-	       {
-		    int i;
-		    printf("Waiting for pid(%d) to finish...\r\n",p);
-		    int status;
-		    waitpid(p, &status, 0);
-		    printf("pid(%d) finished with status=%d\r\n",p,status);
-	       }
-	  }
-	  else if(strstr(cmd, "exit")==cmd)
+	  else if((strstr(cmd, "exit")==cmd) || strstr(cmd, "quit")==cmd )
 	  {
 	       keepGoing=0;
 	       printf("Goodbye.\r\n");
 	  }
 	  else
-	       printf("You typed: %s\r\n", cmd);
+	  {
+	       anode *list = arg_to_linked_list(cmd);
+	       char **const argv = arg_linked_list_to_char_arr(list);
+	       
+	       execute(argv[0], argv);
+	       free(argv);
+	       freeANodeList(list);
+	  }
 
 	  free(cmd);
 
      }
 
 /*     void bprintf(const char * fmt, ...)
-     {
-	  char buffer[];
-	  va_list args;
-	  va_start(args, fmt);
-	  vsprintf(buffer, fmt, args);
-	  sendString(buffer);
-	  va_end(args);
-     }
+       {
+       char buffer[];
+       va_list args;
+       va_start(args, fmt);
+       vsprintf(buffer, fmt, args);
+       sendString(buffer);
+       va_end(args);
+       }
 */
      
 /*

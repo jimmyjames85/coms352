@@ -2,7 +2,7 @@ CC=gcc
 CFLAGS=
 # -ansi
 
-.PHONY: clean
+.PHONY: clean git
 
 all:main.o
 	gcc ${CFLAGS} main.o -o main.a 
@@ -12,3 +12,4 @@ main.o: main.c
 
 clean:
 	rm *.o *.a
+
