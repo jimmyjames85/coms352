@@ -1,13 +1,14 @@
 CC=gcc
 CFLAGS=
+# -ansi
 
 .PHONY: clean
 
 all:main.o
-	gcc main.o -o main.a 
+	gcc ${CFLAGS} main.o -o main.a 
 
 main.o: main.c
-	gcc -c main.c -o main.o
+	gcc ${CFLAGS} -c main.c -o main.o
 
 clean:
 	rm *.o *.a
