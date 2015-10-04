@@ -244,11 +244,13 @@ pid_t execute(const char *file, char *const  args[])
 	  printf("Error(%d) occured executing: %s\n", err, file);
 	  exit(0); /* Terminate this child process on error */
      }
+     printf("execute returning %d\n",p);
      return p;
 }
 
 void executefg(const char *file, char *const  args[])
 {
+     printf("calling execute\n");
      pid_t p = execute(file, args);
      if(p==-1)
      {
@@ -258,12 +260,13 @@ void executefg(const char *file, char *const  args[])
 
      signed int status;
      waitpid(p, &status, 0);
+     printf("executefg DONE\n");
      return;
 }
 
 void executebg(const char *file, char *const args[])
 {
-     pid_t p = execute(file, args);
+     /*  pid_t p = execute(file, args);
      if(p==-1)
      {
 	  printf("Unable to execute: %s\r\n", file);
@@ -275,7 +278,7 @@ void executebg(const char *file, char *const args[])
 	  jobs[job_total].arg = (char *) malloc((sizeof(char)*strlen(file)));
 	  strcpy(jobs[job_total].arg,file);
 	  job_total++; 
-     }
+     }*/
 }
 
 void printJobs(void)
@@ -353,13 +356,10 @@ int main(int argc, char * argv[])
 	  else
 	  {
 	       anode *list = arg_to_linked_list(cmd);
-	       char **const argv = arg_linked_list_to_char_arr(list);
-	       printArgArr(argv);
-
-	       printf("%s\r\n",argv[0]);
-	       executefg(argv[0], argv);
-	       printJobs();
-	       free(argv);
+	       char **args = arg_linked_list_to_char_arr(list);
+	       printArgArr(args);
+	       executefg(args[0], args);
+	       free(args);
 	       freeANodeList(list);
 	  }
 	  free(cmd);
