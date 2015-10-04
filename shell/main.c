@@ -343,11 +343,11 @@ int main(int argc, char * argv[])
 	  else
 	  {
 	       anode *list = arg_to_linked_list(cmd);
-	       printANodeList(list);
 	       char **const argv = arg_linked_list_to_char_arr(list);
 
 	       printf("%s\r\n",argv[0]);
-	       executefg(argv[0], argv);
+	       executebg(argv[0], argv);
+	       printJobs();
 	       free(argv);
 	       freeANodeList(list);
 	  }
