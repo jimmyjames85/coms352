@@ -3,7 +3,8 @@
 #include <string.h>  /* strstr strcmp*/
 #include <unistd.h> /* pid_t fork */
 #include <ctype.h> /*Char type*/
-
+#include <sys/wait.h> /* waitpid*/
+#include <sys/types.h> /* pid_t ??? i think*/
 #include <stdarg.h> /* standard header contains a set of macro
 		     * definitions that define how to step through an
 		     * argument list. */
@@ -69,7 +70,6 @@ anode *arg_to_linked_list(char * cmd)
 	  }
 	  else
 	  {
-	       int i=0;
 	       while((*c)!=' ' && (*c)!='\0')
 		    c++;
 	       /*c points to end of unquoted argument */
@@ -283,7 +283,7 @@ void printJobs(void)
      int i=0;
      for(i=0;i<job_total;i++)
      {
-	  printf("[%d] pid=(%d)\r\n",i,jobs[i]);
+	  printf("[%d] pid=(%d)\r\n",i,jobs[i].pid);
      }
 }
      
@@ -319,6 +319,16 @@ void printANodeList(anode * head)
      printf("\n");
 }
 
+void printArgArr(char ** arr)
+{
+    while(*arr!=NULL)
+    {
+	 printf("%s\n",*arr);
+	 arr++;
+    }
+    if(*arr==NULL)
+    printf("(NULL)\n");
+}
 
 int main(int argc, char * argv[])
 {
@@ -344,9 +354,10 @@ int main(int argc, char * argv[])
 	  {
 	       anode *list = arg_to_linked_list(cmd);
 	       char **const argv = arg_linked_list_to_char_arr(list);
+	       printArgArr(argv);
 
 	       printf("%s\r\n",argv[0]);
-	       executebg(argv[0], argv);
+	       executefg(argv[0], argv);
 	       printJobs();
 	       free(argv);
 	       freeANodeList(list);
