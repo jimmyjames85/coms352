@@ -7,11 +7,9 @@
 #include <stdarg.h> /* standard header contains a set of macro
 		     * definitions that define how to step through an
 		     * argument list. */
-
 #define CR 0x0d
 #define LF 0x0a
 #define CLI "jsh$ "
-
 
 /**
  * Argument node used to make a linked list of arguments for a command
@@ -22,31 +20,6 @@ typedef struct anode
      struct anode *next;
 } anode;
 
-void debug(char * msg)
-{
-     printf("%s",msg );
-}
-
-/**
- * Creates and returns an anode with arg and next both pointing to
- * NULL. If malloc fails then it returns NULL;
- */
-anode *new_anode()
-{
-     anode *newanode = (anode *) malloc(sizeof(anode)); 
-     if(newanode!=NULL)
-     {
-	  newanode->arg = NULL;
-	  newanode->next = NULL;
-     }
-     return newanode;
-}
-char * eatWhiteSpace(char * s)
-{ 
-     while((*s==' ') && (*s!='\0'))
-	  s++;
-     return s; 
-}
 
 /**
  * Creates and returns an anode linked list of arguments from the
@@ -60,7 +33,7 @@ char * eatWhiteSpace(char * s)
 anode *arg_to_linked_list(char * cmd)
 {
      char *c = cmd; /* the current character we are processing */   
-     anode *head = new_anode();
+     anode *head = (anode *) calloc(0, sizeof(anode));
      if(head==NULL) return head; /* failure */
 
      anode *tail = head;
@@ -68,16 +41,17 @@ anode *arg_to_linked_list(char * cmd)
 
      while(*c != '\0')
      {
-	  c = eatWhiteSpace(c);
-	  ab = c; /* argument begining */
+	  while(*c==' ') /* eat up spaces */
+	       c++;
+
+	  ab = c;
 	  if(*c=='"')
 	  {
-	       c++;/* after the quote */
+	       c++;/* start after the first quote */
 	       ab = c; 
 	       while(*c!='"' && *c!='\0')
 		    c++;
-	       
-	       /*c points to end of quoted argument */
+	       /*c points to end quote of quoted argument */
 	  }
 	  else
 	  {
@@ -97,16 +71,15 @@ anode *arg_to_linked_list(char * cmd)
 	  if(*c != '\0') 
 	  {
 	       //we have more to parse
-	       tail->next = new_anode();
+	       tail->next = (anode *) calloc(0, sizeof(anode));
 	       if(tail->next==NULL)
 	       {
 		    /* TODO dealloc the rest of the anodes */
-		    return head; /* failure */
+		    return head; /* failure!!!! */
 	       }
 	  }
 	  tail = tail->next;
      }
-     
      return head;
 }
 
@@ -119,7 +92,7 @@ char ** arg_linked_list_to_char_arr(anode * head)
 	  i++;
 	  cur=cur->next;
      }
-     i++; //for NULL
+     i++; //so we can add NULL pointer as the end of the list
 
      char** arr = malloc(sizeof(char**)*i);
      i=0;
@@ -149,12 +122,14 @@ char ** arg_linked_list_to_char_arr(anode * head)
  *	returns  0 if succesful
  *
  *	returns -2 if malloc or realloc could not allocate memory
+ *
  * DOES NOT FREE MEMORY allocated to **line if function ends successfully
  * */
 int fpreadl(FILE* fstream, char** line)
 {
 
-/*Start with 1 byte and if we need more then we double this each time*/
+     /*Start with 1 byte and if we need more then we double this each
+      * time*/
      unsigned totBytes = 1;
      *line = (char *) malloc(totBytes * sizeof(char));
      if ((*line) == NULL)
@@ -209,10 +184,13 @@ int fpreadl(FILE* fstream, char** line)
 	  pos++;
      }
 
-/** If this while loop was successful then pos points to 1 past the last character that we read in
- *  AND the last character we read in was either a CR or a LF so we need to decrement pos and
- *  change that last character to the null character \0. However if the while loop was never entered
- *  then pos=0 and we set that character to \0 and return an empty string.*/
+     /**  If this while loop was successful then pos points to 1 past
+       *  the last character that we read in AND the last character we
+       *  read in was either a CR or a LF so we need to decrement pos
+       *  and change that last character to the null character
+       *  \0. However if the while loop was never entered then pos=0
+       *  and we set that character to \0 and return an empty
+       *  string.*/
 
      if (endOfLine || feof(fstream))
 	  pos--;
@@ -222,34 +200,56 @@ int fpreadl(FILE* fstream, char** line)
      return 0;
 }
 
+/**
+ *  Uses fpreadl with stdin as the input file stream pointer.
+ *
+ *  See fpreadl for semantics.
+ */
 int readl(char** line)
 {
      return fpreadl(stdin, line);
 }
 
-int execute(const char *file, char *const  args[])
+/**
+ *  Executes the file and waits for the process to finish.
+ *
+ *  From the EXEC(3) man page: The first argument, by convention,
+ *	should point to the filename associated with the file being
+ *	executed.
+ *
+ *  Returns the pid_t of the child process or -1 on failure. 
+ */
+pid_t execute(const char *file, char *const  args[])
 {
-     char isChild = 0;     
      pid_t p = fork();
-     if(p == -1) /* TODO handle error*/
-	  printf("Unable to fork\r\n");
-     else if(p==0) /* child */
+     if(p==0) /* child */
      {
-	  isChild=1;
 	  int err = execvp(file, args);
 	  printf("Error(%d) occured executing: %s\n", err, file);
-	  exit(0);
+	  exit(0); /* Terminate this child process on error */
      }
-     else /* parent */
-     {
-	  signed int status;
-	  waitpid(p, &status, 0);
-	  //printf("\npid(%d) finished with status=%d\r\n",p,status);
-     }
+     return p;
 }
 
+void executew(const char *file, char *const  args[])
+{
+     pid_t p = execute(file, args);
+     if(p==-1)
+     {
+	  printf("Unable to fork \r\n");
+	  return;
+     }
 
-freeANodeList(anode * head)
+     signed int status;
+     waitpid(p, &status, 0);
+     return;
+}
+
+/**
+  * Releases the memory of every anode in the list 
+  *
+  */
+void freeANodeList(anode * head)
 {
      /* Releasing list */
      anode *cur = head;
@@ -260,7 +260,12 @@ freeANodeList(anode * head)
 	  free(parent);
      }
 }
-printANodeList(anode * head)
+
+/**
+ *  Prints the arg of every anode in the list
+ *
+ */
+void printANodeList(anode * head)
 {
      anode * cur = head;
      while(cur!=NULL)
@@ -277,19 +282,15 @@ int main(int argc, char * argv[])
 
      char * cmd;
      char keepGoing = 1;
-     char isChild = 0;
 
      while( keepGoing )
      {
-	  if(isChild)
-	       printf("CHILD$ ");
-	  else
-	       printf("%s",CLI);
+	  printf("%s",CLI);
 
 	  if( readl(&cmd) ) 
 	  {
 	       keepGoing=0;
-	       continue;
+	       continue;/* skip free(cmd) below*/
 	  }
 	  else if((strstr(cmd, "exit")==cmd) || strstr(cmd, "quit")==cmd )
 	  {
@@ -301,40 +302,12 @@ int main(int argc, char * argv[])
 	       anode *list = arg_to_linked_list(cmd);
 	       char **const argv = arg_linked_list_to_char_arr(list);
 	       
-	       execute(argv[0], argv);
+	       executew(argv[0], argv);
 	       free(argv);
 	       freeANodeList(list);
 	  }
-
 	  free(cmd);
-
      }
-
-/*     void bprintf(const char * fmt, ...)
-       {
-       char buffer[];
-       va_list args;
-       va_start(args, fmt);
-       vsprintf(buffer, fmt, args);
-       sendString(buffer);
-       va_end(args);
-       }
-*/
-     
-/*
-  char * inputString = ((char *)malloc((sizeof(char)*INPUT_STRING_BUFFER_SIZE)));
-  *inputString = '\0';
-     
-  fgets(inputString, INPUT_STRING_BUFFER_SIZE-1, stdin);
-  printf("You entered: %s\r\n",inputString);
-
-  fflush(stdin);
-  free((void *)inputString);
-  return 0;
-*/
-
-
-
      return 0;
 }
 
