@@ -10,6 +10,7 @@
 #define CR 0x0d
 #define LF 0x0a
 #define CLI "jsh$ "
+#define MAX_JOB 20
 
 /**
  * Argument node used to make a linked list of arguments for a command
@@ -20,7 +21,16 @@ typedef struct anode
      struct anode *next;
 } anode;
 
+typedef struct job
+{
+     char * arg;
+     pid_t pid;
+} job_t;
 
+job_t jobs[MAX_JOB];
+int job_total=0;
+
+  
 /**
  * Creates and returns an anode linked list of arguments from the
  * c-string cmd. The linked list is terminated by a NULL pointer. 
@@ -34,7 +44,11 @@ anode *arg_to_linked_list(char * cmd)
 {
      char *c = cmd; /* the current character we are processing */   
      anode *head = (anode *) calloc(0, sizeof(anode));
-     if(head==NULL) return head; /* failure */
+     if(head==NULL)
+     {
+	  printf("CALLOC FAILED!!!\r\n");
+	  return head; /* failure */
+     }
 
      anode *tail = head;
      char *ab; /*argument begining*/
@@ -61,6 +75,7 @@ anode *arg_to_linked_list(char * cmd)
 	       /*c points to end of unquoted argument */
 	  }
 
+	  /* Terminate the current arg */
 	  if((*c) != '\0')
 	  {
 	       *c = '\0';
@@ -74,6 +89,7 @@ anode *arg_to_linked_list(char * cmd)
 	       tail->next = (anode *) calloc(0, sizeof(anode));
 	       if(tail->next==NULL)
 	       {
+		    printf("calloc Errored\r\n");
 		    /* TODO dealloc the rest of the anodes */
 		    return head; /* failure!!!! */
 	       }
@@ -185,12 +201,12 @@ int fpreadl(FILE* fstream, char** line)
      }
 
      /**  If this while loop was successful then pos points to 1 past
-       *  the last character that we read in AND the last character we
-       *  read in was either a CR or a LF so we need to decrement pos
-       *  and change that last character to the null character
-       *  \0. However if the while loop was never entered then pos=0
-       *  and we set that character to \0 and return an empty
-       *  string.*/
+      *  the last character that we read in AND the last character we
+      *  read in was either a CR or a LF so we need to decrement pos
+      *  and change that last character to the null character
+      *  \0. However if the while loop was never entered then pos=0
+      *  and we set that character to \0 and return an empty
+      *  string.*/
 
      if (endOfLine || feof(fstream))
 	  pos--;
@@ -231,7 +247,7 @@ pid_t execute(const char *file, char *const  args[])
      return p;
 }
 
-void executew(const char *file, char *const  args[])
+void executefg(const char *file, char *const  args[])
 {
      pid_t p = execute(file, args);
      if(p==-1)
@@ -245,10 +261,37 @@ void executew(const char *file, char *const  args[])
      return;
 }
 
+void executebg(const char *file, char *const args[])
+{
+     pid_t p = execute(file, args);
+     if(p==-1)
+     {
+	  printf("Unable to execute: %s\r\n", file);
+	  return;
+     }
+     else
+     {
+	  jobs[job_total].pid = p;
+	  jobs[job_total].arg = (char *) malloc((sizeof(char)*strlen(file)));
+	  strcpy(jobs[job_total].arg,file);
+	  job_total++; 
+     }
+}
+
+void printJobs(void)
+{
+     int i=0;
+     for(i=0;i<job_total;i++)
+     {
+	  printf("[%d] pid=(%d)\r\n",i,jobs[i]);
+     }
+}
+     
+
 /**
-  * Releases the memory of every anode in the list 
-  *
-  */
+ * Releases the memory of every anode in the list 
+ *
+ */
 void freeANodeList(anode * head)
 {
      /* Releasing list */
@@ -300,9 +343,11 @@ int main(int argc, char * argv[])
 	  else
 	  {
 	       anode *list = arg_to_linked_list(cmd);
+	       printANodeList(list);
 	       char **const argv = arg_linked_list_to_char_arr(list);
-	       
-	       executew(argv[0], argv);
+
+	       printf("%s\r\n",argv[0]);
+	       executefg(argv[0], argv);
 	       free(argv);
 	       freeANodeList(list);
 	  }
