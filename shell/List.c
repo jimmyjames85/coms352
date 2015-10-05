@@ -1,59 +1,70 @@
-#include <stddef.h> /* size_t */
+//# include <stddef.h> 
 #include <stdlib.h> /* malloc */
+#include <stdint.h> /* size_t */
 #include "List.h"
-#define INIT_CAPACITY 2 //TODO move to .h file and include _h_gaurd
 
-/*
-  typedef struct List
-  {
-  void ** arr;
-  uint16_t capacity;
-  uint16_t length;
-  size_t * element_size;
-  } List;
-*/
 
-List * List(size_t * elementSize)
+int lresize(List * list)
+{
+//     printf("size: %d  cap: %d\n",list->length, list->capacity);
+     if(list->length == list->capacity)
+     {
+//	  printf("Growing!");
+	  /* grow list */     
+	  list->capacity *= 2;
+	  void ** newArr = realloc(list->arr, sizeof(void *)*list->capacity);
+	  if(newArr==NULL)
+	       return -1;
+	  list->arr=newArr;
+     }
+     if(list->capacity>_LIST_INIT_CAPACITY && 2*list->length < list->capacity)
+     {
+//	  printf("Shrinking!");
+	  /* shrink list */
+	  list->capacity /= 2 ;
+	  void ** newArr =realloc(list->arr, sizeof(void *)*list->capacity);
+	  if(newArr==NULL)
+	       return -1;
+	  list->arr=newArr;
+     }
+     return 0;
+}
+List * lalloc()
 {
      List * ret = malloc(sizeof(List)); 
-     ret->capacity=INIT_CAPACITY;
+     ret->capacity=_LIST_INIT_CAPACITY;
      ret->length=0;
-     ret->arr = malloc(ret->capacity * INIT_CAPACITY);
-}
+     ret->arr = malloc(sizeof(void*) * ret->capacity);
+     return ret;
 
-List * List_add(List * list, void * data)
-{
-     List_resize(list);
-     if(list->length < list->capacity)
-     {
-	  list-arr[list-length] = data;
-	  list-length++;
-     }
-     else
-     {
-	  list-capacity *= 2;
-	  realloc(list->arr, list->elementSize*list->capacity);
-     }
 }
-
-void List_resize(List * list)
+int ladd(List * list, void * data)
 {
-     /* shrink list */
-     if(2*list->length < list->capacity)
-     {
-	  list->capacity /= 2;
-	  realloc(list-arr, list->elementSize*list->capacity);
-     }
-     /* grow list */     
-     else if(list-length >= list->capacity - 1)
-     {
-	  list-capacity *= 2;
-	  realloc(list->arr, list->elementSize*list->capacity);
-     }
+     if(lresize(list)!=0)
+	  return -1;
+     list->arr[list->length++] = data;
+     return 0;
 }
-
-void List_free(List * list)
+void * lget(List * list, int i)
 {
-     free(list->arr);
-     free(list);
+     if(i>=0 && i<list->length)
+	  return list->arr[i];
+     return NULL;
+}
+void lfree(List * list)
+{
+     if(list!=NULL && list->arr!=NULL)
+     {
+	  free(list->arr);
+	  free(list);
+     }   
+}
+void lfreefree(List * list)
+{
+     if(list==NULL)
+	  return;
+     int i=0;
+     for(i=0;i<list->length;i++)
+	  free(list->arr[i]);
+     lfree(list);
 }

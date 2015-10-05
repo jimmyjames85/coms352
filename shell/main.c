@@ -8,123 +8,14 @@
 #include <stdarg.h> /* standard header contains a set of macro
 		     * definitions that define how to step through an
 		     * argument list. */
+
+
+#include "List.h"
+#include "Job.h"
 #define CR 0x0d
 #define LF 0x0a
 #define CLI "jsh$ "
-#define MAX_JOB 20
 
-
-/**
- * Argument node used to make a linked list of arguments for a command
- */
-typedef struct anode
-{
-     char * arg;
-     struct anode *next;
-} anode;
-
-typedef struct job
-{
-     char * arg;
-     pid_t pid;
-} job_t;
-
-
-job_t jobs[MAX_JOB];
-int job_total=0;
-
-  
-/**
- * Creates and returns an anode linked list of arguments from the
- * c-string cmd. The linked list is terminated by a NULL pointer. 
- * 
- * This function modifies the cmd string by replacing all spaces
- * outside of quotes with the terminator '\0'. The returned linked
- * list contains pointers to the begining of each subsequent cmd.
- *
- */
-anode *arg_to_linked_list(char * cmd)
-{
-     char *c = cmd; /* the current character we are processing */   
-     anode *head = (anode *) calloc(0, sizeof(anode));
-     if(head==NULL)
-     {
-	  printf("CALLOC FAILED!!!\r\n");
-	  return head; /* failure */
-     }
-
-     anode *tail = head;
-     char *ab; /*argument begining*/
-
-     while(*c != '\0')
-     {
-	  while(*c==' ') /* eat up spaces */
-	       c++;
-
-	  ab = c;
-	  if(*c=='"')
-	  {
-	       c++;/* start after the first quote */
-	       ab = c; 
-	       while(*c!='"' && *c!='\0')
-		    c++;
-	       /*c points to end quote of quoted argument */
-	  }
-	  else
-	  {
-	       while((*c)!=' ' && (*c)!='\0')
-		    c++;
-	       /*c points to end of unquoted argument */
-	  }
-
-	  /* Terminate the current arg */
-	  if((*c) != '\0')
-	  {
-	       *c = '\0';
-	       c++;
-	  }
-
-	  tail->arg = ab;
-	  if(*c != '\0') 
-	  {
-	       //we have more to parse
-	       tail->next = (anode *) calloc(0, sizeof(anode));
-	       if(tail->next==NULL)
-	       {
-		    printf("calloc Errored\r\n");
-		    /* TODO dealloc the rest of the anodes */
-		    return head; /* failure!!!! */
-	       }
-	  }
-	  tail = tail->next;
-     }
-     return head;
-}
-
-char ** arg_linked_list_to_char_arr(anode * head)
-{
-     int i = 0;
-     anode * cur=head;
-     while(cur!=NULL)
-     {
-	  i++;
-	  cur=cur->next;
-     }
-     i++; //so we can add NULL pointer as the end of the list
-
-     char** arr = malloc(sizeof(char**)*i);
-     i=0;
-     cur=head;
-     while(cur!=NULL)
-     {
-	  *(arr+i)=cur->arg;
-	  cur=cur->next;
-	  i++;
-     }
-
-     *(arr+i)=NULL;
-     return arr;
-}
 
 /**
  * Reads in a line from a file until it reaches a CR,LF, or a CRLF.
@@ -246,13 +137,11 @@ pid_t execute(const char *file, char *const  args[])
 	  printf("Error(%d) occured executing: %s\n", err, file);
 	  exit(0); /* Terminate this child process on error */
      }
-     printf("execute returning %d\n",p);
      return p;
 }
 
 void executefg(const char *file, char *const  args[])
 {
-     printf("calling execute\n");
      pid_t p = execute(file, args);
      if(p==-1)
      {
@@ -262,85 +151,61 @@ void executefg(const char *file, char *const  args[])
 
      signed int status;
      waitpid(p, &status, 0);
-     printf("executefg DONE\n");
      return;
 }
 
-void executebg(const char *file, char *const args[])
+Job * executebg(const char *file, char *const args[])
 {
+     Job * ret =NULL;
      pid_t p = execute(file, args);
      if(p==-1)
      {
 	  printf("Unable to execute: %s\r\n", file);
-	  return;
+	  return NULL;
      }
      else
      {
-	  jobs[job_total].pid = p;
-	  jobs[job_total].arg = (char *) malloc((sizeof(char)*strlen(file)));
-	  strcpy(jobs[job_total].arg,file);
-	  job_total++; 
+	  ret=jalloc(file, p);
+     }
+     return ret;
+}
+
+void printJobs(List * jobList)
+{
+     int i;
+     Job * job;
+     for(i=0;i<jobList->length;i++)
+     {
+	  job = lget(jobList,i);
+	  int status;
+	  waitpid(job->pid, &status, WNOHANG | WUNTRACED);
+	  //int stat = 314;
+/*	  if(status) 
+	  stat = WIFEXITED(status); */
+
+	  printf("[%d] pid=(%d) %s %d %d\r\n",job->job_id,job->pid,job->cmd, status, 0);
      }
 }
 
-void printJobs(void)
+void printArgList(List * argList)     
 {
-     int i=0;
-     for(i=0;i<job_total;i++)
+     int i;
+     for(i=0;i<argList->length;i++)
      {
-	  printf("[%d] pid=(%d)\r\n",i,jobs[i].pid);
-     }
-}
-     
-
-/**
- * Releases the memory of every anode in the list 
- *
- */
-void freeANodeList(anode * head)
-{
-     /* Releasing list */
-     anode *cur = head;
-     while(cur!=NULL)
-     {
-	  anode *parent = cur;
-	  cur = cur->next;
-	  free(parent);
-     }
-}
-
-/**
- *  Prints the arg of every anode in the list
- *
- */
-void printANodeList(anode * head)
-{
-     anode * cur = head;
-     while(cur!=NULL)
-     {
-	  printf("%s ", cur->arg);
-	  cur = cur->next;
+	  char * cmd = lget(argList,i);
+	  if(cmd!=NULL)
+	       printf("'%s' ",cmd);
      }
      printf("\n");
 }
 
-void printArgArr(char ** arr)
-{
-    while(*arr!=NULL)
-    {
-	 printf("%s\n",*arr);
-	 arr++;
-    }
-    if(*arr==NULL)
-    printf("(NULL)\n");
-}
 
 int main(int argc, char * argv[])
 {
-
+     List * jobs = lalloc();
      char * cmd;
      char keepGoing = 1;
-
+     int i;
      while( keepGoing )
      {
 	  printf("%s",CLI);
@@ -355,18 +220,35 @@ int main(int argc, char * argv[])
 	       keepGoing=0;
 	       printf("Goodbye.\r\n");
 	  }
+	  else if((strstr(cmd, "jobs")==cmd))
+	  {
+	       printJobs(jobs);
+	  }
 	  else
 	  {
-	       anode *list = arg_to_linked_list(cmd);
-	       char **args = arg_linked_list_to_char_arr(list);
-	       printArgArr(args);
-	       executebg(args[0], args);
-	       printJobs();
-	       free(args);
-	       freeANodeList(list);
+	       List * alist = arglist(cmd);
+	       if(alist->length>1 && (strcmp(lget(alist,alist->length-2), "&")==0) )
+	       {
+		    alist->arr[alist->length-1] = alist->arr[alist->length-2]; //so lfreefree can free the & str
+		    alist->arr[alist->length-2] = NULL;
+		    Job * job = executebg(lget(alist,0), (char * const *)alist->arr);
+		    if(job!=NULL)
+			 ladd(jobs,job);
+	       }
+	       else
+	       {
+		    executefg(lget(alist,0), (char * const *)alist->arr);
+	       }
+
+	       
+	       lfreefree(alist);
 	  }
 	  free(cmd);
      }
+
+     for(i=0;i<jobs->length;i++)
+	  jfree(jobs->arr[i]);
+     lfree(jobs);
      return 0;
 }
 
