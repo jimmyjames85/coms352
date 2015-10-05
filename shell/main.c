@@ -13,6 +13,7 @@
 #define CLI "jsh$ "
 #define MAX_JOB 20
 
+
 /**
  * Argument node used to make a linked list of arguments for a command
  */
@@ -27,6 +28,7 @@ typedef struct job
      char * arg;
      pid_t pid;
 } job_t;
+
 
 job_t jobs[MAX_JOB];
 int job_total=0;
@@ -266,7 +268,7 @@ void executefg(const char *file, char *const  args[])
 
 void executebg(const char *file, char *const args[])
 {
-     /*  pid_t p = execute(file, args);
+     pid_t p = execute(file, args);
      if(p==-1)
      {
 	  printf("Unable to execute: %s\r\n", file);
@@ -278,7 +280,7 @@ void executebg(const char *file, char *const args[])
 	  jobs[job_total].arg = (char *) malloc((sizeof(char)*strlen(file)));
 	  strcpy(jobs[job_total].arg,file);
 	  job_total++; 
-     }*/
+     }
 }
 
 void printJobs(void)
@@ -358,7 +360,8 @@ int main(int argc, char * argv[])
 	       anode *list = arg_to_linked_list(cmd);
 	       char **args = arg_linked_list_to_char_arr(list);
 	       printArgArr(args);
-	       executefg(args[0], args);
+	       executebg(args[0], args);
+	       printJobs();
 	       free(args);
 	       freeANodeList(list);
 	  }
