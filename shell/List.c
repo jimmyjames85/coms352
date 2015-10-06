@@ -68,3 +68,19 @@ void lfreefree(List * list)
 	  free(list->arr[i]);
      lfree(list);
 }
+
+void * lremove(List * list, int i)
+{
+     void * ret = NULL;
+     if(i>=0 && i<list->length)
+     {
+	  ret = list->arr[i] ;
+	  int j;
+	  
+	  for(j=i;j<list->length-1;j++)
+	       list->arr[j] = list->arr[j+1];
+	  list->length--;
+     }
+     lresize(list);
+     return ret;
+}

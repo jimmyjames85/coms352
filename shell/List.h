@@ -13,6 +13,7 @@ void lfree(List * list);
 void lfreefree(List * list);
 int ladd(List * list, void * data);
 void * lget(List * list, int i);
+void * lremove(List * list, int i);
 List * lalloc();
 
 #endif // _list_h_

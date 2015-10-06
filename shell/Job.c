@@ -1,80 +1,49 @@
-#include "Job.h"
 #include <stdlib.h> /* malloc, free, rand */
 #include <string.h> /* strstr strcmp*/
 #include <stdio.h>  /* sprintf*/
 
+#include "Job.h"
 int _next_job_number=0;
 
-Job * jalloc(char * cmd, pid_t pid)
+Job * jalloc(const char * cmd, pid_t pid, job_status status)
 {
-     Job * ret = malloc(sizeof(Job));
-     if(ret==NULL)
-	  return NULL;
-     
-     ret->job_id = _next_job_number++;
-     ret->cmd = (char *) malloc((sizeof(char)*strlen(cmd)));
-     ret->pid = pid;
-     strcpy(ret->cmd,cmd);
-     return ret;
+    Job * ret = malloc(sizeof(Job));
+    if(ret==NULL)
+	return NULL;
+
+
+    ret->job_id = _next_job_number++;
+    ret->cmd = (char *) malloc((sizeof(char)*strlen(cmd)));
+    ret->pid = pid;
+    strcpy(ret->cmd,cmd);
+    ret->status = status;
+    return ret;
 }
 
 void jfree(Job * job)
 {
-     if(job==NULL)
-	  return;
-     if(job->cmd!=NULL)
-	  free(job->cmd);
-     free(job);
+    if(job==NULL)
+	return;
+    if(job->cmd!=NULL)
+	free(job->cmd);
+    free(job);
 }
 
-/**
- * Creates and returns a list of arguments parsed from the c-string
- * cmd. A NULL pointer is appended to the list as well.
- * 
- */
-List * arglist(char * cmd)
+
+void printJobs(LList * running, LList * finished)
 {
-     List * alist = lalloc();
-     char *c = cmd; /* the current character we are processing */   
-     char *ab; /*argument begining*/
-     char * curcmd;
-     while(*c != '\0')
+     int i;
+     Job * job;
+     printf("Running:\r\n");     
+     for(i=0;i<running->length;i++)
      {
-	  while(*c==' ') /* eat up spaces */
-	       c++;
-
-	  ab = c;
-	  if(*c=='"')
-	  {
-	       c++;/* start after the first quote */
-	       ab = c; 
-	       while(*c!='"' && *c!='\0')
-		    c++;
-	       /*c points to end quote of quoted argument */
-	  }
-	  else
-	  {
-	       while((*c)!=' ' && (*c)!='\0')
-		    c++;
-	       /*c points to end of unquoted argument */
-	  }
-	  int strsize= (c - ab + 1);
-	  
-	  if(strsize>1)
-	  {
-	       curcmd = malloc(sizeof(char *)*strsize);
-	       sprintf(curcmd,ab,strsize);
-	       *(curcmd+strsize-1)='\0'; /* terminate the string */
-	       ladd(alist,curcmd);
-	  }
-
-	  /* c should point to either a space or a quote and we want
-	   * to advance it past that unless the the cmd is ill
-	   * formated and abruptly ended */
-	  if((*c) != '\0')
-	       c++;
+	  job = llget(running,i);
+	  printf("\t[%d] %s\r\n",job->job_id,job->cmd);
      }
-     ladd(alist, NULL);
-     return alist;
+     printf("Finished:\r\n");
+     for(i=0;i<finished->length;i++)
+     {
+	  job = llget(running,i);
+	  printf("\t[%d] %s\r\n",job->job_id,job->cmd);
+     }     
 }
-
