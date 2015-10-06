@@ -24,5 +24,6 @@ int lladd(LList * list, void * data);
 void * llget(LList * list, int i);
 void * llremove(LList * list, int i);
 LList * llalloc(void);
+int llsize(LList * list); 
 
 #endif // _llist_h_

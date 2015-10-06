@@ -2,6 +2,7 @@
 #include <stdlib.h>     /* malloc, free, rand */
 #include <unistd.h> /* pid_t fork */
 #include <sys/wait.h> /* waitpid*/
+#include <string.h>
 #define CR 0x0d
 #define LF 0x0a
 
@@ -144,8 +145,10 @@ void executefg(const char *file, char *const  args[])
      return;
 }
 
+
 Job * executebg(const char *file, char *const args[])
 {
+     char * createStringFromArgList(char *const args[]);
      Job * ret =NULL;
      pid_t p = execute(file, args);
      if(p==-1)
@@ -155,7 +158,11 @@ Job * executebg(const char *file, char *const args[])
      }
      else
      {
-	  ret=jalloc(file, p, RUNNING);
+	  char * argString = createStringFromArgList(args);
+	  printf("%s\n", argString);
+	  ret=jalloc(argString, p, RUNNING);
+	  printf("freeing...\n");
+	  free(argString);
      }
      return ret;
 }
@@ -224,3 +231,37 @@ void printArgList(List * argList)
      printf("\n");
 }
 
+char * createStringFromArgList(char *const args[])
+{
+     int len = 0;
+     int capacity = 10;  /*10 is arbitrary*/
+     char * str = malloc(sizeof(char)*capacity);
+     char * str_end=str;
+
+     int i;
+     for(i=0;args[i]!=NULL;i++)
+     {
+	  char * cmd = args[i];
+	  if(cmd!=NULL)
+	  {
+	       int cmdLen = strlen(cmd)+1; /* include \0 */
+	       if(cmdLen+len>=capacity)
+	       {
+		    capacity = (len + cmdLen)*2;
+		    printf("rea--");
+		    char * tmp =  realloc(str, sizeof(char)*capacity);
+		    printf("--lloc\n");
+		    if(tmp == NULL)
+			 printf ("NOOOOOOOOOO!");
+		    else
+			 str =  tmp;
+	       }
+	       sprintf(str_end, " %s ", cmd);
+	       len=strlen(str);
+	       str_end+=cmdLen+2; /* 2...1 for space 1 for \0 */
+	  }
+     }
+     str_end='\0';
+
+     return str;
+}

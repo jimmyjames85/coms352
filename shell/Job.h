@@ -3,6 +3,9 @@
 #include <sys/types.h> /* pid_t */
 #include "LList.h"
 extern int _next_job_number;
+
+void reset_next_job_number(void);
+
 typedef enum {RUNNING, FINISHED, DEAD} job_status;
 
 typedef struct Job
@@ -10,7 +13,7 @@ typedef struct Job
     char * cmd;
     pid_t pid;
     int job_id;
-    int status;
+    job_status status;
 } Job;
 
 

@@ -10,7 +10,10 @@ void llfree(LList * list)
 void llfreefree(LList * list)
 {
 }
-
+int llsize(LList * list)
+{
+     return list->length;
+} 
 int lladd(LList * list, void * data)
 {
      llnode * elem = malloc(sizeof(llnode));
@@ -36,6 +39,7 @@ int lladd(LList * list, void * data)
 	  list->tail = elem; 
      }
      list->length++;
+     
      return 0;
 }
 
@@ -47,6 +51,7 @@ llnode * _get_node(LList * list, int i)
      llnode * cur = list->head;
      while(i>0 && cur!=NULL)
      {
+	  
 	  cur = cur->next;
 	  i--;
      }

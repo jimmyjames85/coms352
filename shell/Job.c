@@ -5,6 +5,11 @@
 #include "Job.h"
 int _next_job_number=0;
 
+void reset_next_job_number(void)
+{
+     _next_job_number = 0;
+}
+
 Job * jalloc(const char * cmd, pid_t pid, job_status status)
 {
     Job * ret = malloc(sizeof(Job));
@@ -39,11 +44,12 @@ void printJobs(LList * running, LList * finished)
      {
 	  job = llget(running,i);
 	  printf("\t[%d] %s\r\n",job->job_id,job->cmd);
+
      }
      printf("Finished:\r\n");
      for(i=0;i<finished->length;i++)
      {
-	  job = llget(running,i);
+	  job = llget(finished,i);
 	  printf("\t[%d] %s\r\n",job->job_id,job->cmd);
      }     
 }

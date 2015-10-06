@@ -14,58 +14,53 @@
 #include "Job.h"
 #define CLI "jsh$ "
 
+void printJobLList(LList * ll)
+{
+     printf(":: s=%d :::::: ", llsize(ll));
+     int i=0;
+     while(i<llsize(ll))
+     {
+	  printf("[%d] ", ((Job *)llget(ll,i))->job_id);
+	  i++;
+     }
+
+     printf("\n");
+}
+
 void updateJobs(LList * running, LList * finished)
 {
      int i;
-     int status;
      Job * job;
      pid_t pid;
+     Job * jobr ;            
 
-     
-     i=0;
-     while(i<finished->length)
+     while(llsize(finished)> 0)
      {
-	  job=llget(finished,i);
-	  if(job->status==FINISHED)
-	  {
-	       printf("swtiching status to DEAD [%d]\n",job->job_id);
-	       job->status=DEAD;
-	  }
-	  else if(job->status==DEAD)
-	  {
-	       job = llremove(finished, i);
-	       printf("removing %s [%d]\n", job->cmd, job->job_id);
-	       if(job!=NULL)
-	       {
-		    printf("freeing job...\n");
-		    jfree(job);
-	       }
-	       else
-		    printf("uhoh\n");
-
-	       continue;
-	  }
-	  i++;
+	  jobr = llremove(finished, 0);
+	  if(jobr!=NULL)
+	       jfree(jobr);
      }
+
      i=0;
-     while(i<running->length)
+     int status;
+     while(i< llsize(running))
      {
 	  job=llget(running,i);
 	  pid = waitpid(job->pid, &status, WNOHANG | WUNTRACED);
+
 	  if(pid!=0)
 	  {
-	       job = llremove(running, i);
-	       if(job==NULL)
+	       jobr =llremove(running, i);
+	       if(jobr!=NULL)
 	       {
-		    printf("unable to remove %i", i);
+		    job->status=FINISHED; 
+		    lladd(finished, job);
 	       }
-	       job->status=FINISHED; 
-	       lladd(finished, job);
 	       continue;
 	  }
 	  i++;
      }
-
+     printJobs(running, finished);
 }
 
 
@@ -81,6 +76,9 @@ int main(int argc, char * argv[])
      {
 	  printf("%s",CLI);
 
+	  if(llsize(running_jobs)==0 && llsize(finished_jobs)==0)
+	       reset_next_job_number();
+
 	  if( readl(&cmd) ) 
 	  {
 	       keepGoing=0;
@@ -94,11 +92,9 @@ int main(int argc, char * argv[])
 	  else if((strstr(cmd, "jobs")==cmd))
 	  {
 	       updateJobs(running_jobs, finished_jobs);	       	       
-	       printJobs(running_jobs, finished_jobs);
 	  }
 	  else
 	  {
-	       
 	       List * alist = arglist(cmd);
 	       if(alist->length>1 && (strcmp(lget(alist,alist->length-2), "&")==0) )
 	       {
@@ -115,14 +111,16 @@ int main(int argc, char * argv[])
 	       }
 	       lfreefree(alist);
 	       updateJobs(running_jobs, finished_jobs);	       
-	       printJobs(running_jobs, finished_jobs);
 	  }
 	  free(cmd);
      }
 
-/*     for(i=0;i<jobs->length;i++)
-	  jfree(jobs->arr[i]);
-*/
+     while(0<llsize(running_jobs))
+	  jfree(llremove(running_jobs, 0));
+
+     while(0<llsize(finished_jobs))
+	  jfree(llremove(finished_jobs, 0));
+
      llfree(running_jobs);
      llfree(finished_jobs);
      return 0;
