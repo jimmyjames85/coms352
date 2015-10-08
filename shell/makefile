@@ -2,9 +2,9 @@ CC=gcc
 CFLAGS=-Wall
 # -ansi
 
-.PHONY: clean git
+.PHONY: clean git wait
 
-all: List.o Job.o util.o main.o LList.o
+all: List.o Job.o util.o main.o LList.o wait
 	gcc ${CFLAGS} List.o Job.o util.o LList.o main.o -o main.a 
 
 main.o: main.c 
@@ -22,6 +22,9 @@ util.o: util.c
 LList.o: LList.c
 	gcc ${CFLAGS} -c LList.c -o LList.o
 
+wait: wait.c
+	gcc wait.c -o waitn
+
 clean:
-	rm *.o *.a
+	rm *.o *.a *.stackdump *.exe
 

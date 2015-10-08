@@ -3,6 +3,7 @@
 #include <unistd.h> /* pid_t fork */
 #include <sys/wait.h> /* waitpid*/
 #include <string.h>
+#include <fcntl.h> /* open */
 #define CR 0x0d
 #define LF 0x0a
 
@@ -110,12 +111,28 @@ int readl(char** line)
 
 
 
-pid_t execute(const char *file, char *const  args[])
+pid_t execute(const char *file, char *const  args[], char *const  in_file, char *const out_file)
 {
      pid_t p = fork();
      if(p==0) /* child */
      {
+	  if(in_file!=NULL)
+	  {
+	       int infd = open(in_file, O_RDONLY);
+	       if(infd!=-1)
+		    dup2(infd,0);
+	  }
+
+	  if(out_file!=NULL)
+	  {
+	       int outfd = open(out_file,O_WRONLY | O_CREAT | O_TRUNC);
+
+	       if(outfd !=-1)
+		    dup2(outfd,1);
+	  }
+
 	  int err = execvp(file, args);
+	  
 	  printf("Error(%d) occured executing: %s\n", err, file);
 	  exit(0); /* Terminate this child process on error */
      }
@@ -129,28 +146,32 @@ pid_t execute(const char *file, char *const  args[])
  *	should point to the filename associated with the file being
  *	executed.
  *
- *  Returns the pid_t of the child process or -1 on failure. 
+ *  Returns the pid of the child process on exit or -1 on failure.
  */
-void executefg(const char *file, char *const  args[])
+pid_t executefg(const char *file, char *const  args[], int * status, char *const  in_file, char *const out_file)
 {
-     pid_t p = execute(file, args);
+     pid_t p = execute(file, args, in_file, out_file);
      if(p==-1)
      {
 	  printf("Unable to fork \r\n");
-	  return;
+	  return -1;
      }
 
-     signed int status;
-     waitpid(p, &status, 0);
-     return;
+     return waiton(p, status);
 }
 
 
-Job * executebg(const char *file, char *const args[])
+pid_t waiton(pid_t p, int * status)
+{
+     return waitpid(p, status, 0);
+}
+
+
+Job * executebg(const char *file, char *const args[], char *const  in_file, char *const out_file)
 {
      char * createStringFromArgList(char *const args[]);
      Job * ret =NULL;
-     pid_t p = execute(file, args);
+     pid_t p = execute(file, args, in_file, out_file);
      if(p==-1)
      {
 	  printf("Unable to execute: %s\r\n", file);
@@ -159,9 +180,7 @@ Job * executebg(const char *file, char *const args[])
      else
      {
 	  char * argString = createStringFromArgList(args);
-	  printf("%s\n", argString);
 	  ret=jalloc(argString, p, RUNNING);
-	  printf("freeing...\n");
 	  free(argString);
      }
      return ret;
@@ -175,48 +194,48 @@ Job * executebg(const char *file, char *const args[])
  */
 List * arglist(char * cmd)
 {
-    List * alist = lalloc();
-    char *c = cmd; /* the current character we are processing */   
-    char *ab; /*argument begining*/
-    char * curcmd;
-    while(*c != '\0')
-	{
-	    while(*c==' ') /* eat up spaces */
-		c++;
+     List * alist = lalloc();
+     char *c = cmd; /* the current character we are processing */   
+     char *ab; /*argument begining*/
+     char * curcmd;
+     while(*c != '\0')
+     {
+	  while(*c==' ') /* eat up spaces */
+	       c++;
 
-	    ab = c;
-	    if(*c=='"')
-		{
-		    c++;/* start after the first quote */
-		    ab = c; 
-		    while(*c!='"' && *c!='\0')
-			c++;
-		    /*c points to end quote of quoted argument */
-		}
-	    else
-		{
-		    while((*c)!=' ' && (*c)!='\0')
-			c++;
-		    /*c points to end of unquoted argument */
-		}
-	    int strsize= (c - ab + 1);
+	  ab = c;
+	  if(*c=='"')
+	  {
+	       c++;/* start after the first quote */
+	       ab = c; 
+	       while(*c!='"' && *c!='\0')
+		    c++;
+	       /*c points to end quote of quoted argument */
+	  }
+	  else
+	  {
+	       while((*c)!=' ' && (*c)!='\0')
+		    c++;
+	       /*c points to end of unquoted argument */
+	  }
+	  int strsize= (c - ab + 1);
 	  
-	    if(strsize>1)
-		{
-		    curcmd = malloc(sizeof(char *)*strsize);
-		    sprintf(curcmd,ab,strsize);
-		    *(curcmd+strsize-1)='\0'; /* terminate the string */
-		    ladd(alist,curcmd);
-		}
+	  if(strsize>1)
+	  {
+	       curcmd = malloc(sizeof(char *)*strsize);
+	       sprintf(curcmd,ab,strsize);
+	       *(curcmd+strsize-1)='\0'; /* terminate the string */
+	       ladd(alist,curcmd);
+	  }
 
-	    /* c should point to either a space or a quote and we want
-	     * to advance it past that unless the the cmd is ill
-	     * formated and abruptly ended */
-	    if((*c) != '\0')
-		c++;
-	}
-    ladd(alist, NULL);
-    return alist;
+	  /* c should point to either a space or a quote and we want
+	   * to advance it past that unless the the cmd is ill
+	   * formated and abruptly ended */
+	  if((*c) != '\0')
+	       c++;
+     }
+     ladd(alist, NULL);
+     return alist;
 }
 
 void printArgList(List * argList)     
@@ -248,17 +267,16 @@ char * createStringFromArgList(char *const args[])
 	       if(cmdLen+len>=capacity)
 	       {
 		    capacity = (len + cmdLen)*2;
-		    printf("rea--");
 		    char * tmp =  realloc(str, sizeof(char)*capacity);
-		    printf("--lloc\n");
 		    if(tmp == NULL)
-			 printf ("NOOOOOOOOOO!");
+			 printf ("Unable to realloc!");
 		    else
 			 str =  tmp;
 	       }
 	       sprintf(str_end, " %s ", cmd);
+	       printf("\n%s",str_end);
 	       len=strlen(str);
-	       str_end+=cmdLen+2; /* 2...1 for space 1 for \0 */
+	       str_end+=cmdLen+1; /* 1 for space */
 	  }
      }
      str_end='\0';
