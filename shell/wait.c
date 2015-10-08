@@ -9,7 +9,7 @@ int main(int argc, char * argv[])
      
     if(argc<2)
 	return 0;
-    long time = atol(argv[1]);
+    int time = atoi(argv[1]);
     pid_t myPid = getpid();
     while(time>0)
     {

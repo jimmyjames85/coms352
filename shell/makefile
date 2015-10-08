@@ -26,5 +26,5 @@ wait: wait.c
 	gcc wait.c -o waitn
 
 clean:
-	rm *.o *.a *.stackdump *.exe
+	rm *.o *.a *.stackdump *.exe waitn
 

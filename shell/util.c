@@ -121,20 +121,24 @@ pid_t execute(const char *file, char *const  args[], char *const  in_file, char 
 	       int infd = open(in_file, O_RDONLY);
 	       if(infd!=-1)
 		    dup2(infd,0);
+	       else
+	       {
+		    printf("%s: Input file error\n", file);
+		    exit(-1);
+	       }
 	  }
 
 	  if(out_file!=NULL)
 	  {
-	       int outfd = open(out_file,O_WRONLY | O_CREAT | O_TRUNC);
+	       int outfd = open(out_file,O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
 
 	       if(outfd !=-1)
 		    dup2(outfd,1);
 	  }
 
 	  int err = execvp(file, args);
-	  
-	  printf("Error(%d) occured executing: %s\n", err, file);
-	  exit(0); /* Terminate this child process on error */
+	  printf("Unable to execute: %s\n", file);
+	  exit(err); /* Terminate this child process on error */
      }
      return p;
 }
@@ -152,10 +156,7 @@ pid_t executefg(const char *file, char *const  args[], int * status, char *const
 {
      pid_t p = execute(file, args, in_file, out_file);
      if(p==-1)
-     {
-	  printf("Unable to fork \r\n");
 	  return -1;
-     }
 
      return waiton(p, status);
 }

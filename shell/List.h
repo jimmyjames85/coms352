@@ -15,5 +15,5 @@ int ladd(List * list, void * data);
 void * lget(List * list, int i);
 void * lremove(List * list, int i);
 List * lalloc();
-
+void * lreplace(List * list, int i, void * newData);
 #endif // _list_h_

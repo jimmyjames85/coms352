@@ -9,6 +9,7 @@
 		     * definitions that define how to step through an
 		     * argument list. */
 #include <unistd.h>
+
 #include "util.h"
 #include "List.h"
 #include "LList.h"
@@ -106,7 +107,21 @@ void handleWaitCmd(char * cmd, LList * running_jobs)
  */
 void pwd()
 {
-     char * cwd = get_current_dir_name(); 
+     size_t str_size = sizeof(char) * 2;
+     char * cwd = malloc(str_size); 
+     char * ret = getcwd(cwd, str_size);
+     while((ret = getcwd(cwd, str_size))==NULL)
+     {
+	  str_size *=2;
+	  char * tmp = (char *)realloc(cwd, str_size);
+	  if(tmp==NULL)
+	  {
+	       printf("ERROR with realloc\n");//TODO
+	       free(cwd);
+	       return;
+	  }
+	  cwd = tmp;
+     }
      printf("%s",cwd);
      free(cwd);     
 }
@@ -125,6 +140,90 @@ void handleChdirCmd(char * cmd)
 	  pwd();
 	  printf("\n");
      }
+}
+
+void assignRedirectionFiles(List * alist, char ** in_file, char ** out_file)
+{
+     int cur = 0;
+     while(cur < alist->length)
+     {
+	  char * curarg = (char *)lget(alist, cur++);
+	  if(curarg==NULL)
+	       continue;
+	  else if(strstr(curarg,"<")==curarg)
+	  {
+	       cur--;
+	       free( lremove(alist,cur)); /* free and remove '<' */
+	       if(cur < alist->length)
+	       {
+		    free(*in_file); /* in case we've done this before */
+		    *in_file =(char *)lremove(alist, cur);
+	       }
+	  }
+	  else if(strstr(curarg,">")==curarg)
+	  {
+	       cur--;
+	       free(lremove(alist,cur)); /* free and remove '>' */
+	       if(cur < alist->length)
+	       {
+		    free(*out_file); /* in case we've done this before */			      
+		    *out_file = (char *) lremove(alist, cur);
+	       }
+	  }
+     }     
+}
+
+/**
+ * Replaces all pipe symbols | in the alist with NULL pointers. This
+ * does free the cstrings that contain the pipes 
+ *
+ * returns the number of pipes replaced
+ */
+int breakUpPipes(List * alist)
+{
+     int pipeCount = 0;
+     int i;
+     for(i=0;i<alist->length;i++)
+     {
+	  char * cmd = lget(alist, i);
+	  if(cmd!=NULL && strstr(cmd, "|")==cmd)
+	  {
+	       char * c = lreplace(alist, i, NULL);
+	       free(c);
+	       pipeCount++;
+	  }
+     }
+     return pipeCount;
+}
+
+void executeCmd(char * cmd, LList * running_jobs, LList * finished_jobs)
+{
+     char * in_file=NULL;
+     char * out_file=NULL;
+     List * alist = arglist(cmd);
+
+     assignRedirectionFiles(alist, &in_file, &out_file);
+
+     if(alist->length>1 && (strcmp(lget(alist,alist->length-2), "&")==0) )
+     {
+	  lremove(alist, alist->length -2);
+	  //alist->arr[alist->length-1] = alist->arr[alist->length-2]; //so lfreefree can free the & str
+	  //alist->arr[alist->length-2] = NULL;
+ 
+	  Job * job = executebg(lget(alist,0), (char * const *)alist->arr, in_file, out_file);
+	  if(job!=NULL)
+	       lladd(running_jobs,job);
+     }
+     else
+     {
+	  breakUpPipes(alist);
+	  int status;
+	  executefg(lget(alist,0), (char * const *)alist->arr, &status, in_file, out_file);
+     }
+     lfreefree(alist);
+     free(in_file);
+     free(out_file);
+     updateJobs(running_jobs, finished_jobs, PRINT_JOBS_EVERY_TIME); 
 }
 
 int main(int argc, char * argv[])
@@ -175,59 +274,7 @@ int main(int argc, char * argv[])
 	  }
 	  else
 	  {
-	       char * in_file=NULL;
-	       char * out_file=NULL;
-	       List * alist = arglist(cmd);
-
-	       
-	       int cur = 0;
-	       while(cur < alist->length)
-	       {
-		    char * curarg = (char *)lget(alist, cur++);
-		    if(curarg==NULL)
-			 continue;
-		    else if(strstr(curarg,"<")==curarg)
-		    {
-			 cur--;
-			 free( lremove(alist,cur)); /* free and remove '<' */
-			 if(cur < alist->length)
-			 {
-			      free(in_file); /* in case we've done this before */
-			      in_file =(char *)lremove(alist, cur);
-			 }
-		    }
-		    else if(strstr(curarg,">")==curarg)
-		    {
-			 cur--;
-			 free(lremove(alist,cur)); /* free and remove '>' */
-			 if(cur < alist->length)
-			 {
-			      free(out_file); /* in case we've done this before */			      
-			      out_file = (char *) lremove(alist, cur);
-			 }
-		    }
-	       }
-
-	       if(alist->length>1 && (strcmp(lget(alist,alist->length-2), "&")==0) )
-	       {
-		    alist->arr[alist->length-1] = alist->arr[alist->length-2]; //so lfreefree can free the & str
-		    alist->arr[alist->length-2] = NULL;
-
-		    
-		    
-		    Job * job = executebg(lget(alist,0), (char * const *)alist->arr, in_file, out_file);
-		    if(job!=NULL)
-			 lladd(running_jobs,job);
-	       }
-	       else
-	       {
-		    int status;
-		    executefg(lget(alist,0), (char * const *)alist->arr, &status, in_file, out_file);
-	       }
-	       lfreefree(alist);
-	       free(in_file);
-	       free(out_file);
-	       updateJobs(running_jobs, finished_jobs, PRINT_JOBS_EVERY_TIME); 
+	       executeCmd(cmd, running_jobs, finished_jobs);
 	  }
 	  free(cmd);
      }
