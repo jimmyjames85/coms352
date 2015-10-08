@@ -34,7 +34,6 @@ int fpreadl(FILE* fstream, char** line);
 int readl(char** line);
 
 
-
 /**
  *  Executes the file and waits for the process to finish.
  *
@@ -44,11 +43,13 @@ int readl(char** line);
  *
  *  Returns the pid_t of the child process or -1 on failure. 
  */
-pid_t executefg(const char *file, char *const  args[], int * status, char *const  in_file, char *const out_file);
+
+pid_t executefg(const char *file, char *const  args[], int * status, int infd, int outfd);
 
 /**
  */
-Job * executebg(const char *file, char *const args[], char *const  in_file, char *const out_file);
+Job * executebg(const char *file, char *const args[], int infd, int outfd);
+//todo rename Job to job_t List to list_t LList to llist etc. 
 
 /**
  * Creates and returns a list of arguments parsed from the c-string
@@ -58,7 +59,6 @@ Job * executebg(const char *file, char *const args[], char *const  in_file, char
 List * arglist(char * cmd);
     
 void printArgList(List * argList);
-
 
 pid_t waiton(pid_t p, int * status);
 #endif

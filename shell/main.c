@@ -9,6 +9,7 @@
 		     * definitions that define how to step through an
 		     * argument list. */
 #include <unistd.h>
+#include <fcntl.h> /* open */
 
 #include "util.h"
 #include "List.h"
@@ -16,19 +17,6 @@
 #include "Job.h"
 #define CLI "jsh$ "
 #define PRINT_JOBS_EVERY_TIME 0
-
-void printJobLList(LList * ll)
-{
-     printf(":: s=%d :::::: ", llsize(ll));
-     int i=0;
-     while(i<llsize(ll))
-     {
-	  printf("[%d] ", ((Job *)llget(ll,i))->job_id);
-	  i++;
-     }
-
-     printf("\n");
-}
 
 void updateJobs(LList * running, LList * finished, char print_jobs)
 {
@@ -198,27 +186,60 @@ int breakUpPipes(List * alist)
 
 void executeCmd(char * cmd, LList * running_jobs, LList * finished_jobs)
 {
+     int infd = STDIN_FILENO;
+     int outfd = STDOUT_FILENO;
      char * in_file=NULL;
      char * out_file=NULL;
      List * alist = arglist(cmd);
-
+     
      assignRedirectionFiles(alist, &in_file, &out_file);
+     
+     if(in_file!=NULL)
+	  infd = open(in_file, O_RDONLY);
 
+     if(out_file!=NULL)
+	  outfd = open(out_file,O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
+
+
+     if(infd ==-1)
+     {
+	  printf("%s: Input file error\n", (char *)lget(alist,0));	  
+     }
+     else if( outfd == -1)
+     {
+	  printf("%s: Output file error\n", (char *)lget(alist,0));	  
+     }
      if(alist->length>1 && (strcmp(lget(alist,alist->length-2), "&")==0) )
      {
 	  lremove(alist, alist->length -2);
 	  //alist->arr[alist->length-1] = alist->arr[alist->length-2]; //so lfreefree can free the & str
 	  //alist->arr[alist->length-2] = NULL;
  
-	  Job * job = executebg(lget(alist,0), (char * const *)alist->arr, in_file, out_file);
+	  Job * job = executebg(lget(alist,0), (char * const *)alist->arr, infd, outfd);
 	  if(job!=NULL)
 	       lladd(running_jobs,job);
      }
      else
      {
-	  breakUpPipes(alist);
+	  /*
+	    TODO link pipes together
+	    int numPipes = breakUpPipes(alist);
+	    int i;
+
+	    List * pipes = lalloc();
+	    for(i=0;i<numPipes;i++)
+	    {
+	    int * pipe = malloc(sizeof(int)*2);
+	    pipe(pipe);
+	    ladd(pipes, pipe);
+	    }
+	    close(((int *)lget(pipes, 0))[0]);
+	    close(((int *)lget(pipes, pipes->length-1))[0]);
+
+	  */	  
+	  
 	  int status;
-	  executefg(lget(alist,0), (char * const *)alist->arr, &status, in_file, out_file);
+	  executefg(lget(alist,0), (char * const *)alist->arr, &status, infd, outfd);
      }
      lfreefree(alist);
      free(in_file);

@@ -111,30 +111,16 @@ int readl(char** line)
 
 
 
-pid_t execute(const char *file, char *const  args[], char *const  in_file, char *const out_file)
+pid_t execute(const char *file, char *const  args[], int infd, int outfd)
 {
      pid_t p = fork();
      if(p==0) /* child */
      {
-	  if(in_file!=NULL)
-	  {
-	       int infd = open(in_file, O_RDONLY);
-	       if(infd!=-1)
-		    dup2(infd,0);
-	       else
-	       {
-		    printf("%s: Input file error\n", file);
-		    exit(-1);
-	       }
-	  }
+	  if(infd!=-1)
+	       dup2(infd,0);
 
-	  if(out_file!=NULL)
-	  {
-	       int outfd = open(out_file,O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
-
-	       if(outfd !=-1)
-		    dup2(outfd,1);
-	  }
+	  if(outfd !=-1)
+	       dup2(outfd,1);
 
 	  int err = execvp(file, args);
 	  printf("Unable to execute: %s\n", file);
@@ -152,9 +138,9 @@ pid_t execute(const char *file, char *const  args[], char *const  in_file, char 
  *
  *  Returns the pid of the child process on exit or -1 on failure.
  */
-pid_t executefg(const char *file, char *const  args[], int * status, char *const  in_file, char *const out_file)
+pid_t executefg(const char *file, char *const  args[], int * status, int infd, int outfd)
 {
-     pid_t p = execute(file, args, in_file, out_file);
+     pid_t p = execute(file, args, infd, outfd);
      if(p==-1)
 	  return -1;
 
@@ -168,11 +154,11 @@ pid_t waiton(pid_t p, int * status)
 }
 
 
-Job * executebg(const char *file, char *const args[], char *const  in_file, char *const out_file)
+Job * executebg(const char *file, char *const args[], int infd, int outfd)
 {
      char * createStringFromArgList(char *const args[]);
      Job * ret =NULL;
-     pid_t p = execute(file, args, in_file, out_file);
+     pid_t p = execute(file, args, infd, outfd);
      if(p==-1)
      {
 	  printf("Unable to execute: %s\r\n", file);
