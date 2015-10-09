@@ -16,7 +16,6 @@ Job * jalloc(const char * cmd, pid_t pid, job_status status)
     if(ret==NULL)
 	return NULL;
 
-
     ret->job_id = _next_job_number++;
     ret->cmd = (char *) malloc((sizeof(char)*strlen(cmd)));
     ret->pid = pid;

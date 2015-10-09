@@ -41,24 +41,42 @@ int readl(char** line);
  *	should point to the filename associated with the file being
  *	executed.
  *
- *  Returns the pid_t of the child process or -1 on failure. 
+ *  Takes in an array of open_tot open file descriptors that the child
+ *  process should close after forking.
+ *
+ *  Blocks until process p changes state. 
+ *
+ *  Returns the pid_t of the child process or -1 on failure.
  */
 
-pid_t executefg(const char *file, char *const  args[], int * status, int infd, int outfd);
+pid_t executefg(const char *file, char *const  args[], int * status, int infd, int outfd, int * open_fds, int open_tot);
 
 /**
+ *  Executes the file and waits for the process to finish.
+ *
+ *  From the EXEC(3) man page: The first argument, by convention,
+ *	should point to the filename associated with the file being
+ *	executed.
+ *
+ *  Takes in an array of open_tot open file descriptors that the child
+ *  process should close after forking.
+ *
+ *  Returns the pid_t of the child process or -1 on failure.
  */
-Job * executebg(const char *file, char *const args[], int infd, int outfd);
-//todo rename Job to job_t List to list_t LList to llist etc. 
+Job * executebg(const char *file, char *const args[], int infd, int outfd, int * open_fds, int open_tot);
 
 /**
- * Creates and returns a list of arguments parsed from the c-string
- * cmd. A NULL pointer is appended to the list as well.
+ * This is the main function that is used for parsing the user
+ * commands. It creates and returns a list of arguments parsed from
+ * the c-string cmd. A NULL pointer is appended to the list as well.
  * 
  */
 List * arglist(char * cmd);
     
 void printArgList(List * argList);
 
+/**
+ * Blocks until process p changes state.
+ */
 pid_t waiton(pid_t p, int * status);
 #endif

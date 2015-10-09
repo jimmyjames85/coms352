@@ -111,21 +111,25 @@ int readl(char** line)
 
 
 
-pid_t execute(const char *file, char *const  args[], int infd, int outfd)
+pid_t execute(const char *file, char *const  args[], int infd, int outfd, int * open_fds, int open_tot)
 {
+     
      pid_t p = fork();
      if(p==0) /* child */
      {
-	  if(infd!=-1)
-	       dup2(infd,0);
 
-	  if(outfd !=-1)
-	       dup2(outfd,1);
+	  dup2(infd, 0);
+	  dup2(outfd, 1);
+
+	  int i=0;
+	  for(i=0;i<open_tot;i++)
+	       close(open_fds[i]);
 
 	  int err = execvp(file, args);
-	  printf("Unable to execute: %s\n", file);
+	  printf("execute [%d]: Unable to execute: %s\n", err, file);
 	  exit(err); /* Terminate this child process on error */
      }
+
      return p;
 }
 
@@ -138,9 +142,9 @@ pid_t execute(const char *file, char *const  args[], int infd, int outfd)
  *
  *  Returns the pid of the child process on exit or -1 on failure.
  */
-pid_t executefg(const char *file, char *const  args[], int * status, int infd, int outfd)
+pid_t executefg(const char *file, char *const  args[], int * status, int infd, int outfd,  int * open_fds, int open_tot)
 {
-     pid_t p = execute(file, args, infd, outfd);
+     pid_t p = execute(file, args, infd, outfd, open_fds, open_tot);
      if(p==-1)
 	  return -1;
 
@@ -154,14 +158,14 @@ pid_t waiton(pid_t p, int * status)
 }
 
 
-Job * executebg(const char *file, char *const args[], int infd, int outfd)
+Job * executebg(const char *file, char *const args[], int infd, int outfd,  int * open_fds, int open_tot)
 {
      char * createStringFromArgList(char *const args[]);
      Job * ret =NULL;
-     pid_t p = execute(file, args, infd, outfd);
+     pid_t p = execute(file, args, infd, outfd, open_fds, open_tot);
      if(p==-1)
      {
-	  printf("Unable to execute: %s\r\n", file);
+	  printf("executebg: Unable to execute: %s\r\n", file);
 	  return NULL;
      }
      else
@@ -261,7 +265,6 @@ char * createStringFromArgList(char *const args[])
 			 str =  tmp;
 	       }
 	       sprintf(str_end, " %s ", cmd);
-	       printf("\n%s",str_end);
 	       len=strlen(str);
 	       str_end+=cmdLen+1; /* 1 for space */
 	  }

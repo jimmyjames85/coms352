@@ -15,7 +15,7 @@
 #include "List.h"
 #include "LList.h"
 #include "Job.h"
-#define CLI "jsh$ "
+#define CLI "wsh$ "
 #define PRINT_JOBS_EVERY_TIME 0
 
 void updateJobs(LList * running, LList * finished, char print_jobs)
@@ -56,6 +56,33 @@ void updateJobs(LList * running, LList * finished, char print_jobs)
 	  printJobs(running, finished);
 }
 
+Job * getJob(LList * running_jobs, int jobId)
+{
+     llnode * cur = running_jobs->head;
+     while(cur!=NULL && ((Job *)cur->data)->job_id != jobId )
+	  cur=cur->next;
+
+     if(cur==NULL)
+	  return NULL;
+
+     return (Job *)cur->data;
+}
+
+pid_t getJobPid(LList * running_jobs, int jobId)
+{
+/*     llnode * cur = running_jobs->head;
+     while(cur!=NULL && ((Job *)cur->data)->job_id != jobId )
+	  cur=cur->next;
+
+     if(cur==NULL)
+	  return -1;
+	  return ((Job *)cur->data)->pid;*/
+     Job * job = getJob(running_jobs, jobId);
+     if(job==NULL)
+	  return -1;
+     return job->pid;
+}
+
 void handleWaitCmd(char * cmd, LList * running_jobs)
 {
 
@@ -68,16 +95,14 @@ void handleWaitCmd(char * cmd, LList * running_jobs)
 	  int waitJobId = atoi((cmd+5));
 	  if(llsize(running_jobs))
 	  {
-	       llnode * cur = running_jobs->head;
-	       while(cur!=NULL && ((Job *)cur->data)->job_id != waitJobId )
-		    cur=cur->next;
-
-	       if(cur==NULL)
+	       pid_t pid= getJobPid(running_jobs, waitJobId);
+	       
+	       if(pid==-1)
 		    printf("Job [%d] does not exist.\n",waitJobId);
 	       else
 	       {
 		    int status;
-		    waiton(((Job *)cur->data)->pid,&status);
+		    waiton(pid, &status);
 	       }
 	  }
 	  else
@@ -125,6 +150,7 @@ void handleChdirCmd(char * cmd)
 	  printf("Unable to change directory to: %s\n",path);
      else
      {
+	  printf("Working directory ");
 	  pwd();
 	  printf("\n");
      }
@@ -184,62 +210,138 @@ int breakUpPipes(List * alist)
      return pipeCount;
 }
 
+int * createListOfOpenFds(List * pipes)
+{
+     int * ret = malloc(sizeof(int)*2*pipes->length);
+     int i=0;
+     for(i=0;i<pipes->length;i++)
+     {
+	  int * fd = (int *)lget(pipes, i);
+	  ret[2*i]=fd[0];
+	  ret[2*i+1]=fd[1];
+     }
+     return ret;
+}
+
 void executeCmd(char * cmd, LList * running_jobs, LList * finished_jobs)
 {
+     
      int infd = STDIN_FILENO;
      int outfd = STDOUT_FILENO;
+
      char * in_file=NULL;
      char * out_file=NULL;
      List * alist = arglist(cmd);
-     
+
      assignRedirectionFiles(alist, &in_file, &out_file);
-     
+
      if(in_file!=NULL)
 	  infd = open(in_file, O_RDONLY);
 
      if(out_file!=NULL)
 	  outfd = open(out_file,O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH );
 
-
+     int numPipes = breakUpPipes(alist);
      if(infd ==-1)
      {
-	  printf("%s: Input file error\n", (char *)lget(alist,0));	  
+	  printf("%s: Input file error\n", (char *)lget(alist,0)); 
      }
      else if( outfd == -1)
      {
 	  printf("%s: Output file error\n", (char *)lget(alist,0));	  
      }
-     if(alist->length>1 && (strcmp(lget(alist,alist->length-2), "&")==0) )
+     else if(alist->length>1 && (strcmp(lget(alist,alist->length-2), "&")==0) )
      {
 	  lremove(alist, alist->length -2);
-	  //alist->arr[alist->length-1] = alist->arr[alist->length-2]; //so lfreefree can free the & str
-	  //alist->arr[alist->length-2] = NULL;
- 
-	  Job * job = executebg(lget(alist,0), (char * const *)alist->arr, infd, outfd);
+	  Job * job = executebg(lget(alist,0), (char * const *)alist->arr, infd, outfd, NULL,0);
 	  if(job!=NULL)
 	       lladd(running_jobs,job);
      }
-     else
+     else if(numPipes==0)
      {
-	  /*
-	    TODO link pipes together
-	    int numPipes = breakUpPipes(alist);
-	    int i;
-
-	    List * pipes = lalloc();
-	    for(i=0;i<numPipes;i++)
-	    {
-	    int * pipe = malloc(sizeof(int)*2);
-	    pipe(pipe);
-	    ladd(pipes, pipe);
-	    }
-	    close(((int *)lget(pipes, 0))[0]);
-	    close(((int *)lget(pipes, pipes->length-1))[0]);
-
-	  */	  
-	  
 	  int status;
-	  executefg(lget(alist,0), (char * const *)alist->arr, &status, infd, outfd);
+	  executefg(lget(alist,0), (char * const *)alist->arr, &status, infd, outfd, NULL,0);
+     }
+     else if((infd!=STDIN_FILENO || outfd!=STDOUT_FILENO))
+     {
+	  printf("Aborting...Mixed pipes and redirection is not implemented\n");
+     }
+     else
+     { 	  
+	  List * pipes = lalloc();
+	  int i;
+	  for(i=0;i<numPipes;i++)
+	  {
+	       int * new_pipe = malloc(sizeof(int)*2);
+	       pipe(new_pipe);
+	       ladd(pipes, new_pipe);
+	  }
+	  //ladd(pipes, NULL);
+
+	  List * pipedJobIds = lalloc();
+	  int alist_start=0;
+	  for(i=0; i<=numPipes; i++)
+	  {
+	       int pipe_in = STDIN_FILENO;
+	       int pipe_out = STDOUT_FILENO;
+	       
+	       if(i>0)
+		    pipe_in =((int *)lget(pipes,i-1))[0];
+	       if(i<numPipes)
+		    pipe_out = ((int *)lget(pipes,i))[1];
+
+	       char * file = lget(alist, alist_start);
+	       char * const * argList = (char * const *)(alist->arr + alist_start);
+	       
+	       int * openFDS = createListOfOpenFds(pipes);      
+	       Job * job = executebg(file , argList, pipe_in, pipe_out, openFDS, 2*pipes->length);
+	       free(openFDS);
+
+	       if(job!=NULL)
+	       {
+		    lladd(running_jobs,job);
+		    int * jobId = malloc(sizeof(int));
+		    *jobId = job->job_id;
+		    ladd(pipedJobIds, jobId);
+	       }
+	       else
+		    printf("UH oh bad error\n");
+	       
+	       //advance to next program to execute
+	       while(alist_start < alist->length && lget(alist,alist_start)!=NULL)
+		    alist_start++;
+	       alist_start++;
+	  }
+
+	  while(pipes->length>0)
+	  {
+	       int *p = (int *)lget(pipes,0);
+	       if(p!=NULL)
+	       {
+		    close(p[0]);
+		    close(p[1]);
+	       }
+	       free(lremove(pipes, 0));
+	  }
+	  lfreefree(pipes);
+
+
+	  //wait until all jobs are finished
+	  while(pipedJobIds->length>0)
+	  {
+	       int status;
+	       int jobId = *((int *)lget(pipedJobIds, 0));
+	       Job * job = getJob(running_jobs, jobId);
+	       
+	       if(job!=NULL)
+	       {
+		    //updateJobs(running_jobs, finished_jobs, 0);
+		    waiton(job->pid,&status); 
+	       }
+	       free(lremove(pipedJobIds, 0));
+	  }
+	  lfreefree(pipedJobIds);
+
      }
      lfreefree(alist);
      free(in_file);
@@ -257,13 +359,10 @@ int main(int argc, char * argv[])
 
      while( keepGoing )
      {
-	  printf("\n");
-	  pwd();
-	  printf("\n%s",CLI);
+	  printf("%s",CLI);
 
 	  if(llsize(running_jobs)==0 && llsize(finished_jobs)==0)
 	       reset_next_job_number();
-
 
 	  if(readl(&cmd))
 	  {
@@ -275,7 +374,6 @@ int main(int argc, char * argv[])
 	       while(*cmd == ' ') //advance to first non-space input
 		    cmd++;
 	  }
-	  
 	  if((strstr(cmd, "exit")==cmd) || strstr(cmd, "quit")==cmd )
 	  {
 	       keepGoing=0;

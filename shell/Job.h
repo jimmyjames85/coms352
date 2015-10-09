@@ -10,10 +10,10 @@ typedef enum {RUNNING, FINISHED, DEAD} job_status;
 
 typedef struct Job
 {
-    char * cmd;
-    pid_t pid;
-    int job_id;
-    job_status status;
+     char * cmd;
+     pid_t pid;
+     int job_id;
+     job_status status;
 } Job;
 
 

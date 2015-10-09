@@ -5,7 +5,7 @@ CFLAGS=-Wall
 .PHONY: clean git wait
 
 all: List.o Job.o util.o main.o LList.o wait
-	gcc ${CFLAGS} List.o Job.o util.o LList.o main.o -o main.a 
+	gcc ${CFLAGS} List.o Job.o util.o LList.o main.o -o wsh
 
 main.o: main.c 
 	gcc ${CFLAGS} -c main.c -o main.o
@@ -26,5 +26,5 @@ wait: wait.c
 	gcc wait.c -o waitn
 
 clean:
-	rm *.o *.a *.stackdump *.exe waitn
+	rm *.o *.a *.stackdump *.exe waitn wsh
 
