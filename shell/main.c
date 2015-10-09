@@ -16,7 +16,7 @@
 #include "LList.h"
 #include "Job.h"
 #define CLI "wsh$ "
-#define PRINT_JOBS_EVERY_TIME 0
+#define PRINT_JOBS_EVERY_TIME 1
 
 void updateJobs(LList * running, LList * finished, char print_jobs)
 {
