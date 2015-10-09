@@ -377,7 +377,6 @@ int main(int argc, char * argv[])
 	  if((strstr(cmd, "exit")==cmd) || strstr(cmd, "quit")==cmd )
 	  {
 	       keepGoing=0;
-	       printf("Goodbye.\r\n");
 	  }
 	  else if((strstr(cmd, "jobs")==cmd))
 	  {
@@ -398,14 +397,24 @@ int main(int argc, char * argv[])
 	  free(cmd);
      }
 
+     printf("Waiting for background jobs to finish...\n");
      while(0<llsize(running_jobs))
-	  jfree(llremove(running_jobs, 0));
+     {
+	  Job * job = llremove(running_jobs, 0);
+	  int status;
+	  waiton(job->pid, &status);
+	  printf("%s has finished. \n", job->cmd);
+	  jfree(job);
+     }
+
 
      while(0<llsize(finished_jobs))
 	  jfree(llremove(finished_jobs, 0));
 
      llfree(running_jobs);
      llfree(finished_jobs);
+     printf("Goodbye.\r\n");
+
      return 0;
 }
 
