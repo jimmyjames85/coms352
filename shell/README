@@ -1,5 +1,7 @@
 Jim Tappe
 
+I also added a build in command jobs to display all the jobs.
+
 Job.h / Job.c
 
 	       -- contains a structure to hold information about jobs.
