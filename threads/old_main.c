@@ -13,7 +13,6 @@ sem_t mutex;
 
 void * count(void * a)
 {
-
     int i, tmp;
     sem_wait(&mutex);
     for(i=0; i<NITER; i++)

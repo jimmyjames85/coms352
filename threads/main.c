@@ -5,17 +5,9 @@
 #include <semaphore.h>
 
 
-
-char *newChar(char c)
-{
-    char *ret = malloc(sizeof(char));
-    *ret = c;
-    return ret;
-}
-
 typedef struct buffer_struct
 {
-    char * data;
+    char *data;
     unsigned int buffer_max_size;
 
 } buffer_t;
@@ -25,7 +17,7 @@ void print_buffer(buffer_t *buffer)
     int i = 0;
     for (i = 0; i < buffer->buffer_max_size; i++)
     {
-        if(EOF==buffer->data[i])
+        if (EOF == buffer->data[i])
             return;
         printf("%c", buffer->data[i]);
     }
@@ -35,7 +27,7 @@ buffer_t *newBuffer(unsigned buffer_max_size)
 {
     buffer_t *buffer = (buffer_t *) malloc(sizeof(buffer_t));
     buffer->buffer_max_size = buffer_max_size;
-    buffer->data = malloc(sizeof(char)*buffer_max_size);
+    buffer->data = malloc(sizeof(char) * buffer_max_size);
     return buffer;
 }
 
@@ -48,69 +40,69 @@ void deleteBuffer(buffer_t *buffer)
 }
 
 //#################################################################################################
-buffer_t *buffer_in;
-buffer_t *buffer_out;
-int data_loaded;
 
+
+buffer_t *buffer_in;
+//////////////////////////////buffer_in semaphores///////////////////////////////////////////
+sem_t *for_empty_buffer_in_counter;
+sem_t *for_full_buffer_in_counter;
+sem_t *for_empty_buffer_in_encryptor;
+sem_t *for_full_buffer_in_encryptor;
+//////////////////////////////buffer_in semaphores///////////////////////////////////////////
+
+buffer_t *buffer_out;
+//////////////////////////////buffer_out semaphores///////////////////////////////////////////
+sem_t *for_empty_buffer_out_counter;
+sem_t *for_full_buffer_out_counter;
+sem_t *for_empty_buffer_out_writer;
+sem_t *for_full_buffer_out_writer;
+//////////////////////////////buffer_out semaphores///////////////////////////////////////////
 
 //#################################################################################################
-void * read_into_buffer(void * cstr_input_file)
+
+
+void *read_into_buffer(void *cstr_input_file)
 {
-    char * input_file = (char*)cstr_input_file;
-    //printf("%s\r\n",input_file);
+    char *input_file = (char *) cstr_input_file;
+
     FILE *fp = fopen(input_file, "r");
     if (fp == NULL)
     {
         fprintf(stderr, "Can't open file %s!\n", input_file);
         exit(1);
     }
+    int ch = '\0';
 
-    int pos =0;
-    int ch='\0';
-
-    while (EOF!=ch)
+    int pos = 0;
+    while (EOF != ch)
     {
+        sem_wait(for_empty_buffer_in_counter);
+        sem_wait(for_empty_buffer_in_encryptor);
+        /////////////////CRITICAL CODE/////////////////////////////////////
         ch = fgetc(fp);
-        printf("%c",ch);
-        if (pos >= buffer_in->buffer_max_size)
-        {
-            pos = 0;
-            printf("read_buffer_overflow!");
-            fclose(fp);
-            exit(1);
-            //TODO wait and when all consumers have read then remove the head
-            //TODO reset pos
-        }
-        buffer_in->data[pos++]=ch;
-
+        buffer_in->data[pos] = ch;
+        pos = (pos + 1) % buffer_in->buffer_max_size;
+        /////////////////CRITICAL CODE/////////////////////////////////////
+        sem_post(for_full_buffer_in_counter);//once for the counter
+        sem_post(for_full_buffer_in_encryptor);//another for the encrypt
     }
     fclose(fp);
-
-    data_loaded=1;
     return NULL;//TODO
 }
 
 
-void * encrypt_buffer(void * arg)
+void *encrypt_buffer(void *unused_arg)
 {
     int s = 1;
-
-    int pos_i=0;
-    int pos_o=0;
-
+    int pos_o = 0;
+    int pos_i = 0;
     char ch = '\0';
-
-    while(EOF!=ch)
+    while (EOF != ch)
     {
-        if(pos_i>=buffer_in->buffer_max_size)
-        {
-            //TODO wait on buffer_in
-            printf("buffer beyond max");
-            pos_i=0;
-            exit(1);
-        }
-
-        ch = buffer_in->data[pos_i++];
+        sem_wait(for_full_buffer_in_encryptor);
+        /////////////////CRITICAL CODE/////////////////////////////////////
+        ch = buffer_in->data[pos_i];
+        pos_i = (pos_i + 1) % buffer_in->buffer_max_size;
 
         if (isalpha(ch))
         {
@@ -134,119 +126,157 @@ void * encrypt_buffer(void * arg)
             }
         }
 
-        if(pos_o>=buffer_out->buffer_max_size)
+
+        if (pos_o >= buffer_out->buffer_max_size)
         {
             //TODO wait on buffer_in
             printf("buffer out beyond max");
-            pos_o=0;
+            pos_o = 0;
             exit(1);
         }
-
         buffer_out->data[pos_o++] = ch;
+
+
+        /////////////////CRITICAL CODE/////////////////////////////////////
+        sem_post(for_empty_buffer_in_encryptor);
     }
+
     return NULL;//TODO
 }
 
 
-void * count_buffer(void * buffer_t_ptr)
+void *count_buffer_in(void *sem_t_arr_1st_full_2nd_is_empty)
 {
-    while(data_loaded==0)
-        ;
-
-    printf("dataLoaded=%d\r\n",data_loaded);
-
-    buffer_t *buffer = (buffer_t * ) buffer_t_ptr;
-    int pos=0;
-    int counts[26]={0};
+    int counts[26] = {0};
     int i;
+
     char ch = '\0';
-    while(EOF!=ch)
+    int pos = 0;
+    while (EOF != ch)
     {
-        if(pos>=buffer->buffer_max_size)
-        {
-            //TODO wait on buffer_in
-            printf("count buffer beyond max");
-            pos=0;
-            exit(1);
-        }
+        sem_wait(for_full_buffer_in_counter);
+        /////////////////CRITICAL CODE/////////////////////////////////////
 
-        ch = toupper(buffer->data[pos++]);
+        ch = toupper(buffer_in->data[pos]);
+        pos = (pos + 1) % buffer_in->buffer_max_size;
         i = ch - 'A';
-        if(i>=0 && i<26)
+        if (i >= 0 && i < 26)
             counts[i]++;
+
+        /////////////////CRITICAL CODE/////////////////////////////////////
+        sem_post(for_empty_buffer_in_counter);
     }
 
-    for(i=0;i<26;i++)
+    for (i = 0; i < 26; i++)
     {
-        ch='A'+i;
-        if(counts[i])
-            printf("%c: %d\r\n", ch, counts[i] );
+        ch = 'A' + i;
+        if (counts[i])
+            printf("%c: %d\r\n", ch, counts[i]);
     }
-
-    data_loaded=2;
 
     return NULL;//TODO
 }
 //#################################################################################################
 
+void printArgs(int argc, char *argv[])
+{
+    int i = 0;
+    for (i = 0; i < argc; i++)
+        printf("%s\r\n", argv[i]);
+    printf("-----------------------------\r\n");
+}
+
 int main(int argc, char *argv[])
 {
 
-    char *input_file = "infile1";
-    //char *out_file = "outfile1";
-    int max_buffer_size = 300;
-    data_loaded=0;
-    int i=0;
-    for(i=0;i<argc;i++)
-        printf("%s\r\n",argv[i]);
-    printf("-----------------------------\r\n");
+    char *input_file = "infile2";
+    char *out_file = "myOutfile1";
+    int max_buffer_size = 5;
+    printf("Buffer Size: %d\r\n", max_buffer_size);
+
+    buffer_in = newBuffer(max_buffer_size);
+    buffer_out = newBuffer(max_buffer_size);
+
+    //////////////////////////////buffer_in semaphores///////////////////////////////////////////
+    for_empty_buffer_in_counter = malloc(sizeof(sem_t));
+    for_full_buffer_in_counter = malloc(sizeof(sem_t));
+    sem_init(for_empty_buffer_in_counter, 0, max_buffer_size);
+    sem_init(for_full_buffer_in_counter, 0, 0);
+
+    for_empty_buffer_in_encryptor = malloc(sizeof(sem_t));
+    for_full_buffer_in_encryptor = malloc(sizeof(sem_t));
+    sem_init(for_empty_buffer_in_encryptor, 0, max_buffer_size);
+    sem_init(for_full_buffer_in_encryptor, 0, 0);
 
 
-    buffer_t *buffer_in = newBuffer(max_buffer_size);
-    buffer_t *buffer_out = newBuffer(max_buffer_size);
 
-    pthread_t reader_thread, input_count_thread;//, encryption_thread;
+    //////////////////////////////buffer_out semaphores///////////////////////////////////////////
+    for_empty_buffer_out_counter = malloc(sizeof(sem_t));
+    for_full_buffer_out_counter = malloc(sizeof(sem_t));
+    sem_init(for_empty_buffer_out_counter, 0, max_buffer_size);
+    sem_init(for_full_buffer_out_counter, 0, 0);
 
-    if(pthread_create(&reader_thread, NULL, read_into_buffer, input_file))
+    for_empty_buffer_out_writer = malloc(sizeof(sem_t));
+    for_full_buffer_out_writer = malloc(sizeof(sem_t));
+    sem_init(for_empty_buffer_out_writer, 0, max_buffer_size);
+    sem_init(for_full_buffer_out_writer, 0, 0);
+
+
+    pthread_t reader_thread, input_count_thread, encryption_thread, output_count_thread, writer_thread;
+
+
+    if (pthread_create(&reader_thread, NULL, read_into_buffer, input_file))
     {
         printf("ERROR creating reader thread\r\n");
         exit(1);
-    };
+    }
 
-    if(pthread_create(&input_count_thread, NULL, count_buffer, buffer_in))
+    if (pthread_create(&input_count_thread, NULL, count_buffer_in, buffer_in))
     {
         printf("ERROR creating input counter thread\r\n");
         exit(1);
-    };
+    }
+
+    if (pthread_create(&encryption_thread, NULL, encrypt_buffer, NULL))
+    {
+        printf("ERROR creating encryption counter thread\r\n");
+        exit(1);
+    }
 
 
 
-    printf("2goodbye\r\n");
-    if(pthread_join(reader_thread,NULL)) /* wait for the thread 1 to finish */
+
+
+
+
+
+
+    if (pthread_join(reader_thread, NULL)) // wait for the thread 1 to finish
     {
         printf("ERROR joining reader thread \n");
     }
 
-    printf("3goodbye\r\n");
-    if(pthread_join(input_count_thread,NULL)) /* wait for the thread 2 to finish */
+    if (pthread_join(input_count_thread, NULL)) // wait for the thread 2 to finish
     {
         printf("ERROR joining input counter thread\n");
     }
 
-    printf("4goodbye\r\n");
+    if (pthread_join(encryption_thread, NULL)) // wait for the thread 3 to finish
+    {
+        printf("ERROR joining input counter thread\n");
+    }
 
-
-/*    read_into_buffer(buffer_in, in_file);
-    //print_buffer(buffer_in);
-    count_buffer(buffer_in);
-
-    encrypt_buffer(buffer_in, buffer_out);
+    ////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////
     print_buffer(buffer_out);
-    count_buffer(buffer_out);
-*/
+    ////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////
 
     deleteBuffer(buffer_in);
     deleteBuffer(buffer_out);
+    free(for_empty_buffer_in_counter);
+    free(for_full_buffer_in_counter);
+    free(for_empty_buffer_in_encryptor);
+    free(for_full_buffer_in_encryptor);
     pthread_exit(NULL);
-
 }
