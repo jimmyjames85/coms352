@@ -1,0 +1,30 @@
+Jim Tappe
+
+I also added a build in command jobs to display all the jobs.
+
+Job.h / Job.c
+
+	       -- contains a structure to hold information about jobs.
+      	       -- This also has method to both allocate the structure
+      	       -- as well as free it. printJobs was a debugging tool.
+
+
+List.h / List.c 
+
+      	       -- This is an array list implementation that dynamically
+      	       -- resizes itself as needed. 
+
+
+LList.h / LList.c 
+
+      	       -- This is an linked list implementation that contains
+      	       -- methods to access it's elements.
+
+util.h / util.c 
+
+      	       -- This contains most of the unistd function calls that
+      	       -- are made such as executebg and executefg.
+
+wait.c
+      	       -- This was a test program so I could test background processes
+
