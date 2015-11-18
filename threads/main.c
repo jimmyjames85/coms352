@@ -236,16 +236,101 @@ void *write_buffer_out_to_file(void *file_loc)
 
 //#################################################################################################
 
-void printArgs(int argc, char *argv[])
+
+
+
+/**
+ * Struct to hold all the threads
+ */
+typedef struct thread_struct
 {
-    int i = 0;
-    for (i = 0; i < argc; i++)
-        printf("%s\r\n", argv[i]);
-    printf("-----------------------------\r\n");
+    pthread_t *reader_thread;
+    pthread_t *input_count_thread;
+    pthread_t *encryption_thread;
+    pthread_t *output_count_thread;
+    pthread_t *writer_thread;
+} project_threads_t;
+
+
+void create_and_start_threads(project_threads_t *threads, count_buffer_args_t *count_buffer_in_args,
+                              count_buffer_args_t *count_buffer_out_args, char *input_file)
+{
+
+    threads->reader_thread = malloc(sizeof(pthread_t));
+    threads->input_count_thread = malloc(sizeof(pthread_t));
+    threads->encryption_thread = malloc(sizeof(pthread_t));
+    threads->output_count_thread = malloc(sizeof(pthread_t));
+    threads->writer_thread = malloc(sizeof(pthread_t));
+
+
+    if (pthread_create(threads->reader_thread, NULL, read_into_buffer, input_file))
+    {
+        printf("ERROR creating reader thread\r\n");
+        exit(1);
+    }
+
+    if (pthread_create(threads->input_count_thread, NULL, count_buffer_chars, count_buffer_in_args))
+    {
+        printf("ERROR creating input counter thread\r\n");
+        exit(1);
+    }
+
+    if (pthread_create(threads->encryption_thread, NULL, encrypt_buffer, NULL))
+    {
+        printf("ERROR creating encryption counter thread\r\n");
+        exit(1);
+    }
+
+    if (pthread_create(threads->output_count_thread, NULL, count_buffer_chars, count_buffer_out_args))
+    {
+        printf("ERROR creating input counter thread\r\n");
+        exit(1);
+    }
+
+    if (pthread_create(threads->writer_thread, NULL, write_buffer_out_to_file, NULL))
+    {
+        printf("ERROR creating file writer thread\r\n");
+        exit(1);
+    }
+
 }
 
 
-void create_semaphores(unsigned int max_buffer_size)
+void join_and_free_threads(project_threads_t *threads)
+{
+    if (pthread_join(*(threads->reader_thread), NULL))
+    {
+        printf("ERROR joining reader thread \n");
+    }
+
+    if (pthread_join(*(threads->input_count_thread), NULL))
+    {
+        printf("ERROR joining input counter thread\n");
+    }
+
+    if (pthread_join(*(threads->encryption_thread), NULL))
+    {
+        printf("ERROR joining encryption thread\n");
+    }
+
+    if (pthread_join(*(threads->output_count_thread), NULL))
+    {
+        printf("ERROR joining output counter thread\n");
+    }
+
+    if (pthread_join(*(threads->writer_thread), NULL))
+    {
+        printf("ERROR joining writer thread\n");
+    }
+
+    free(threads->reader_thread);
+    free(threads->input_count_thread);
+    free(threads->encryption_thread);
+    free(threads->output_count_thread);
+    free(threads->writer_thread);
+}
+
+void create_and_setup_semaphores(unsigned int max_buffer_size)
 {
     //////////////////////////////buffer_in semaphores///////////////////////////////////////////
     for_empty_buffer_in_counter = malloc(sizeof(sem_t));
@@ -273,203 +358,16 @@ void create_semaphores(unsigned int max_buffer_size)
 
     ///////////////////////////print order semaphore/////////////////////////////
     /**
-     * so that the input/output char counters take turns printing their results
-     * input results are first
+     * semaphore so that the input/output char counters take turns printing their results
+     * (input char counts should be printed first)
      */
     print_order_mutex = malloc(sizeof(sem_t));
     sem_init(print_order_mutex, 0, 0);
 
 }
 
-
-#if 0
-/**
- * Struct to hold all the threads
- */
-typedef struct thread_struct
+void free_semaphores()
 {
-    pthread_t reader_thread;
-    pthread_t input_count_thread;
-    pthread_t encryption_thread;
-    pthread_t output_count_thread;
-    pthread_t writer_thread;
-} project_threads_t;
-#endif
-
-
-void create_threads(pthread_t *reader_thread, pthread_t *input_count_thread, pthread_t *encryption_thread,
-                    pthread_t *output_count_thread, pthread_t *writer_thread, count_buffer_args_t *count_buffer_in_args,
-                    count_buffer_args_t *count_buffer_out_args, char *input_file)
-{
-    if (pthread_create(reader_thread, NULL, read_into_buffer, input_file))
-    {
-        printf("ERROR creating reader thread\r\n");
-        exit(1);
-    }
-
-    if (pthread_create(input_count_thread, NULL, count_buffer_chars, count_buffer_in_args))
-    {
-        printf("ERROR creating input counter thread\r\n");
-        exit(1);
-    }
-
-    if (pthread_create(encryption_thread, NULL, encrypt_buffer, NULL))
-    {
-        printf("ERROR creating encryption counter thread\r\n");
-        exit(1);
-    }
-
-    if (pthread_create(output_count_thread, NULL, count_buffer_chars, count_buffer_out_args))
-    {
-        printf("ERROR creating input counter thread\r\n");
-        exit(1);
-    }
-
-    if (pthread_create(writer_thread, NULL, write_buffer_out_to_file, NULL))
-    {
-        printf("ERROR creating file writer thread\r\n");
-        exit(1);
-    }
-
-}
-
-void join_threads(pthread_t *reader_thread, pthread_t *input_count_thread, pthread_t *encryption_thread,
-                  pthread_t *output_count_thread, pthread_t *writer_thread)
-{
-    if (pthread_join(*reader_thread, NULL))
-    {
-        printf("ERROR joining reader thread \n");
-    }
-
-    if (pthread_join(*input_count_thread, NULL))
-    {
-        printf("ERROR joining input counter thread\n");
-    }
-
-    if (pthread_join(*encryption_thread, NULL))
-    {
-        printf("ERROR joining encryption thread\n");
-    }
-
-    if (pthread_join(*output_count_thread, NULL))
-    {
-        printf("ERROR joining output counter thread\n");
-    }
-
-    if (pthread_join(*writer_thread, NULL))
-    {
-        printf("ERROR joining writer thread\n");
-    }
-}
-
-
-int main(int argc, char *argv[])
-{
-
-    char *input_file = "infile2";
-    char *out_file = "myOutfile1";
-    int max_buffer_size = 30;
-    printf("Buffer Size: %d\r\n", max_buffer_size);
-
-    buffer_in = newBuffer(max_buffer_size);
-    buffer_out = newBuffer(max_buffer_size);
-
-    create_semaphores(max_buffer_size);
-
-    count_buffer_args_t count_buffer_in_args;
-    count_buffer_in_args.for_empty_buffer = for_empty_buffer_in_counter;
-    count_buffer_in_args.for_full_buffer = for_full_buffer_in_counter;
-    count_buffer_in_args.buffer = buffer_in;
-
-    count_buffer_args_t count_buffer_out_args;
-    count_buffer_out_args.for_empty_buffer = for_empty_buffer_out_counter;
-    count_buffer_out_args.for_full_buffer = for_full_buffer_out_counter;
-    count_buffer_out_args.buffer = buffer_out;
-
-    pthread_t reader_thread, input_count_thread, encryption_thread, output_count_thread, writer_thread;
-    printf("creating threads\r\n");
-    create_threads(&reader_thread, &input_count_thread, &encryption_thread, &output_count_thread, &writer_thread,
-                   &count_buffer_in_args, &count_buffer_out_args, input_file);
-
-/*
-
-    if (pthread_create(&reader_thread, NULL, read_into_buffer, input_file))
-    {
-        printf("ERROR creating reader thread\r\n");
-        exit(1);
-    }
-
-    count_buffer_args_t count_buffer_in_args;
-    count_buffer_in_args.for_empty_buffer = for_empty_buffer_in_counter;
-    count_buffer_in_args.for_full_buffer = for_full_buffer_in_counter;
-    count_buffer_in_args.buffer = buffer_in;
-
-    if (pthread_create(&input_count_thread, NULL, count_buffer_chars, &count_buffer_in_args))
-    {
-        printf("ERROR creating input counter thread\r\n");
-        exit(1);
-    }
-
-    if (pthread_create(&encryption_thread, NULL, encrypt_buffer, NULL))
-    {
-        printf("ERROR creating encryption counter thread\r\n");
-        exit(1);
-    }
-
-
-    count_buffer_args_t count_buffer_out_args;
-    count_buffer_out_args.for_empty_buffer = for_empty_buffer_out_counter;
-    count_buffer_out_args.for_full_buffer = for_full_buffer_out_counter;
-    count_buffer_out_args.buffer = buffer_out;
-
-    if (pthread_create(&output_count_thread, NULL, count_buffer_chars, &count_buffer_out_args))
-    {
-        printf("ERROR creating input counter thread\r\n");
-        exit(1);
-    }
-
-    if (pthread_create(&writer_thread, NULL, write_buffer_out_to_file, NULL))
-    {
-        printf("ERROR creating file writer thread\r\n");
-        exit(1);
-    }
-*/
-    join_threads(&reader_thread, &input_count_thread, &encryption_thread, &output_count_thread, &writer_thread);
-
-/*
-
-    if (pthread_join(reader_thread, NULL))
-    {
-        printf("ERROR joining reader thread \n");
-    }
-
-    if (pthread_join(input_count_thread, NULL))
-    {
-        printf("ERROR joining input counter thread\n");
-    }
-
-    if (pthread_join(encryption_thread, NULL))
-    {
-        printf("ERROR joining encryption thread\n");
-    }
-
-    if (pthread_join(output_count_thread, NULL))
-    {
-        printf("ERROR joining output counter thread\n");
-    }
-
-    if (pthread_join(writer_thread, NULL))
-    {
-        printf("ERROR joining writer thread\n");
-    }*/
-
-    ////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////
-
-    deleteBuffer(buffer_in);
-    deleteBuffer(buffer_out);
     free(for_empty_buffer_in_counter);
     free(for_full_buffer_in_counter);
     free(for_empty_buffer_in_encryptor);
@@ -479,5 +377,66 @@ int main(int argc, char *argv[])
     free(for_full_buffer_out_counter);
     free(for_empty_buffer_out_writer);
     free(for_full_buffer_out_writer);
+
+    free(print_order_mutex);
+}
+
+int prompt_for_buffer_size()
+{
+    int buffer;
+    printf("Enter buffer size: ");
+    scanf("%u", &buffer );
+    return buffer;
+}
+
+void printArgs(int argc, char *argv[])
+{
+    int i = 0;
+    for (i = 0; i < argc; i++)
+        printf("%s\r\n", argv[i]);
+
+
+}
+
+
+int main(int argc, char *argv[])
+{
+
+    char * format = "Please enter the correct command format.\r\n";
+    if(argc<2)
+    {
+        printf("%s", format);
+        return -1;
+    }
+
+    char *input_file = argv[1];
+    char *out_file = argv[2];
+    int max_buffer_size = prompt_for_buffer_size();
+
+    buffer_in = newBuffer(max_buffer_size);
+    buffer_out = newBuffer(max_buffer_size);
+
+    create_and_setup_semaphores(max_buffer_size);
+
+    count_buffer_args_t count_buffer_in_args;
+    count_buffer_in_args.for_empty_buffer = for_empty_buffer_in_counter;
+    count_buffer_in_args.for_full_buffer = for_full_buffer_in_counter;
+    count_buffer_in_args.buffer = buffer_in;
+
+    count_buffer_args_t count_buffer_out_args;
+    count_buffer_out_args.for_empty_buffer = for_empty_buffer_out_counter;
+    count_buffer_out_args.for_full_buffer = for_full_buffer_out_counter;
+    count_buffer_out_args.buffer = buffer_out;
+
+
+    project_threads_t threads;
+
+    create_and_start_threads(&threads, &count_buffer_in_args, &count_buffer_out_args, input_file);
+    join_and_free_threads(&threads);
+    free_semaphores();
+
+    deleteBuffer(buffer_in);
+    deleteBuffer(buffer_out);
+
     pthread_exit(NULL);
 }
