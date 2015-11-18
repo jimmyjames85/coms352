@@ -1,2 +1,4 @@
 *.a
 *.o
+CMakeLists.txt
+.idea
