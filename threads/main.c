@@ -12,17 +12,6 @@ typedef struct buffer_struct
 
 } buffer_t;
 
-void print_buffer(buffer_t *buffer)
-{
-    int i = 0;
-    for (i = 0; i < buffer->buffer_max_size; i++)
-    {
-        if (EOF == buffer->data[i])
-            return;
-        printf("%c", buffer->data[i]);
-    }
-}
-
 buffer_t *newBuffer(unsigned buffer_max_size)
 {
     buffer_t *buffer = (buffer_t *) malloc(sizeof(buffer_t));
@@ -31,11 +20,9 @@ buffer_t *newBuffer(unsigned buffer_max_size)
     return buffer;
 }
 
-
 void deleteBuffer(buffer_t *buffer)
 {
     free(buffer->data);
-    //llfreefree(buffer->ll_data);
     free(buffer);
 }
 
@@ -48,7 +35,7 @@ sem_t *for_empty_buffer_in_counter;
 sem_t *for_full_buffer_in_counter;
 sem_t *for_empty_buffer_in_encryptor;
 sem_t *for_full_buffer_in_encryptor;
-//////////////////////////////buffer_in semaphores///////////////////////////////////////////
+
 
 buffer_t *buffer_out;
 //////////////////////////////buffer_out semaphores///////////////////////////////////////////
@@ -56,8 +43,8 @@ sem_t *for_empty_buffer_out_counter;
 sem_t *for_full_buffer_out_counter;
 sem_t *for_empty_buffer_out_writer;
 sem_t *for_full_buffer_out_writer;
-//////////////////////////////buffer_out semaphores///////////////////////////////////////////
 
+sem_t *print_order_mutex;
 //#################################################################################################
 
 
@@ -71,15 +58,25 @@ void *read_into_buffer(void *cstr_input_file)
         fprintf(stderr, "Can't open file %s!\n", input_file);
         exit(1);
     }
+    printf("%s\r\n", input_file);
     int ch = '\0';
 
     int pos = 0;
     while (EOF != ch)
     {
+        ch = fgetc(fp);
+
+        /**
+         * read_into_buffer is the producer for the buffer_in
+         * which has two consumers...
+         *
+         * the buffer_in_counter
+         * the buffer_in_encryptor
+         */
+
         sem_wait(for_empty_buffer_in_counter);
         sem_wait(for_empty_buffer_in_encryptor);
         /////////////////CRITICAL CODE/////////////////////////////////////
-        ch = fgetc(fp);
         buffer_in->data[pos] = ch;
         pos = (pos + 1) % buffer_in->buffer_max_size;
         /////////////////CRITICAL CODE/////////////////////////////////////
@@ -100,10 +97,14 @@ void *encrypt_buffer(void *unused_arg)
     while (EOF != ch)
     {
         sem_wait(for_full_buffer_in_encryptor);
-        /////////////////CRITICAL CODE/////////////////////////////////////
+        /////////////////CRITICAL CODE TO READ char/////////////////////////////////////
         ch = buffer_in->data[pos_i];
         pos_i = (pos_i + 1) % buffer_in->buffer_max_size;
+        /////////////////CRITICAL CODE TO READ char/////////////////////////////////////
+        sem_post(for_empty_buffer_in_encryptor);
 
+
+        //Encrypt
         if (isalpha(ch))
         {
             if (s == 1)
@@ -127,26 +128,45 @@ void *encrypt_buffer(void *unused_arg)
         }
 
 
-        if (pos_o >= buffer_out->buffer_max_size)
-        {
-            //TODO wait on buffer_in
-            printf("buffer out beyond max");
-            pos_o = 0;
-            exit(1);
-        }
-        buffer_out->data[pos_o++] = ch;
-
-
-        /////////////////CRITICAL CODE/////////////////////////////////////
-        sem_post(for_empty_buffer_in_encryptor);
+        /**
+         * The encryptor also acts as the producer for the buffer_out
+         * which has two consumers...
+         *
+         * the buffer_out_counter
+         * the buffer_out_writer
+         */
+        sem_wait(for_empty_buffer_out_counter);
+        sem_wait(for_empty_buffer_out_writer);
+        /////////////////CRITICAL CODE TO transfer to buffer_out /////////////////////////////////////
+        buffer_out->data[pos_o] = ch;
+        pos_o = (pos_o + 1) % buffer_out->buffer_max_size;
+        /////////////////CRITICAL CODE TO transfer to buffer_out /////////////////////////////////////
+        sem_post(for_full_buffer_out_counter);
+        sem_post(for_full_buffer_out_writer);
     }
 
     return NULL;//TODO
 }
 
-
-void *count_buffer_in(void *sem_t_arr_1st_full_2nd_is_empty)
+/**
+ * This struct is used to hold pointers to the
+ * arguments needed for the method count_buffer_chars.
+ * Because the method is used by the pthread_create,
+ * it is only allowed one argument...hence this struct.
+ *
+ */
+typedef struct count_buffer_args_struct
 {
+    sem_t *for_full_buffer;
+    sem_t *for_empty_buffer;
+    buffer_t *buffer;
+
+} count_buffer_args_t;
+
+void *count_buffer_chars(void *count_buffer_args_t_ptr)
+{
+    count_buffer_args_t *args = (count_buffer_args_t *) count_buffer_args_t_ptr;
+
     int counts[26] = {0};
     int i;
 
@@ -154,17 +174,28 @@ void *count_buffer_in(void *sem_t_arr_1st_full_2nd_is_empty)
     int pos = 0;
     while (EOF != ch)
     {
-        sem_wait(for_full_buffer_in_counter);
+        sem_wait(args->for_full_buffer);
         /////////////////CRITICAL CODE/////////////////////////////////////
+        ch = toupper(args->buffer->data[pos]);
+        pos = (pos + 1) % args->buffer->buffer_max_size;
+        /////////////////CRITICAL CODE/////////////////////////////////////
+        sem_post(args->for_empty_buffer);
 
-        ch = toupper(buffer_in->data[pos]);
-        pos = (pos + 1) % buffer_in->buffer_max_size;
         i = ch - 'A';
         if (i >= 0 && i < 26)
             counts[i]++;
+    }
 
-        /////////////////CRITICAL CODE/////////////////////////////////////
-        sem_post(for_empty_buffer_in_counter);
+
+    //print to stdout
+    if (args->buffer == buffer_in)
+    {
+        printf("Input file contains \r\n");
+    }
+    else if (args->buffer == buffer_out)
+    {
+        sem_wait(print_order_mutex);
+        printf("Output file contains \r\n");
     }
 
     for (i = 0; i < 26; i++)
@@ -173,9 +204,36 @@ void *count_buffer_in(void *sem_t_arr_1st_full_2nd_is_empty)
         if (counts[i])
             printf("%c: %d\r\n", ch, counts[i]);
     }
+    sem_post(print_order_mutex);
 
     return NULL;//TODO
 }
+
+void *write_buffer_out_to_file(void *file_loc)
+{
+
+    char temp[999];
+    int t = 0;
+    char ch = '\0';
+    int pos = 0;
+    while (EOF != ch)
+    {
+        sem_wait(for_full_buffer_out_writer);
+        /////////////////CRITICAL CODE/////////////////////////////////////
+        ch = buffer_out->data[pos];
+        pos = (pos + 1) % buffer_out->buffer_max_size;
+        /////////////////CRITICAL CODE/////////////////////////////////////
+        sem_post(for_empty_buffer_out_writer);
+        temp[t++] = ch;
+    }
+
+    temp[t - 1] = '\0';//overwrite the EOF char
+    printf("psuedowrite:\r\n+++%s+++\r\n", temp);
+
+    return NULL;//NULL
+
+}
+
 //#################################################################################################
 
 void printArgs(int argc, char *argv[])
@@ -186,17 +244,9 @@ void printArgs(int argc, char *argv[])
     printf("-----------------------------\r\n");
 }
 
-int main(int argc, char *argv[])
+
+void create_semaphores(unsigned int max_buffer_size)
 {
-
-    char *input_file = "infile2";
-    char *out_file = "myOutfile1";
-    int max_buffer_size = 5;
-    printf("Buffer Size: %d\r\n", max_buffer_size);
-
-    buffer_in = newBuffer(max_buffer_size);
-    buffer_out = newBuffer(max_buffer_size);
-
     //////////////////////////////buffer_in semaphores///////////////////////////////////////////
     for_empty_buffer_in_counter = malloc(sizeof(sem_t));
     for_full_buffer_in_counter = malloc(sizeof(sem_t));
@@ -221,9 +271,127 @@ int main(int argc, char *argv[])
     sem_init(for_empty_buffer_out_writer, 0, max_buffer_size);
     sem_init(for_full_buffer_out_writer, 0, 0);
 
+    ///////////////////////////print order semaphore/////////////////////////////
+    /**
+     * so that the input/output char counters take turns printing their results
+     * input results are first
+     */
+    print_order_mutex = malloc(sizeof(sem_t));
+    sem_init(print_order_mutex, 0, 0);
+
+}
+
+
+#if 0
+/**
+ * Struct to hold all the threads
+ */
+typedef struct thread_struct
+{
+    pthread_t reader_thread;
+    pthread_t input_count_thread;
+    pthread_t encryption_thread;
+    pthread_t output_count_thread;
+    pthread_t writer_thread;
+} project_threads_t;
+#endif
+
+
+void create_threads(pthread_t *reader_thread, pthread_t *input_count_thread, pthread_t *encryption_thread,
+                    pthread_t *output_count_thread, pthread_t *writer_thread, count_buffer_args_t *count_buffer_in_args,
+                    count_buffer_args_t *count_buffer_out_args, char *input_file)
+{
+    if (pthread_create(reader_thread, NULL, read_into_buffer, input_file))
+    {
+        printf("ERROR creating reader thread\r\n");
+        exit(1);
+    }
+
+    if (pthread_create(input_count_thread, NULL, count_buffer_chars, count_buffer_in_args))
+    {
+        printf("ERROR creating input counter thread\r\n");
+        exit(1);
+    }
+
+    if (pthread_create(encryption_thread, NULL, encrypt_buffer, NULL))
+    {
+        printf("ERROR creating encryption counter thread\r\n");
+        exit(1);
+    }
+
+    if (pthread_create(output_count_thread, NULL, count_buffer_chars, count_buffer_out_args))
+    {
+        printf("ERROR creating input counter thread\r\n");
+        exit(1);
+    }
+
+    if (pthread_create(writer_thread, NULL, write_buffer_out_to_file, NULL))
+    {
+        printf("ERROR creating file writer thread\r\n");
+        exit(1);
+    }
+
+}
+
+void join_threads(pthread_t *reader_thread, pthread_t *input_count_thread, pthread_t *encryption_thread,
+                  pthread_t *output_count_thread, pthread_t *writer_thread)
+{
+    if (pthread_join(*reader_thread, NULL))
+    {
+        printf("ERROR joining reader thread \n");
+    }
+
+    if (pthread_join(*input_count_thread, NULL))
+    {
+        printf("ERROR joining input counter thread\n");
+    }
+
+    if (pthread_join(*encryption_thread, NULL))
+    {
+        printf("ERROR joining encryption thread\n");
+    }
+
+    if (pthread_join(*output_count_thread, NULL))
+    {
+        printf("ERROR joining output counter thread\n");
+    }
+
+    if (pthread_join(*writer_thread, NULL))
+    {
+        printf("ERROR joining writer thread\n");
+    }
+}
+
+
+int main(int argc, char *argv[])
+{
+
+    char *input_file = "infile2";
+    char *out_file = "myOutfile1";
+    int max_buffer_size = 30;
+    printf("Buffer Size: %d\r\n", max_buffer_size);
+
+    buffer_in = newBuffer(max_buffer_size);
+    buffer_out = newBuffer(max_buffer_size);
+
+    create_semaphores(max_buffer_size);
+
+    count_buffer_args_t count_buffer_in_args;
+    count_buffer_in_args.for_empty_buffer = for_empty_buffer_in_counter;
+    count_buffer_in_args.for_full_buffer = for_full_buffer_in_counter;
+    count_buffer_in_args.buffer = buffer_in;
+
+    count_buffer_args_t count_buffer_out_args;
+    count_buffer_out_args.for_empty_buffer = for_empty_buffer_out_counter;
+    count_buffer_out_args.for_full_buffer = for_full_buffer_out_counter;
+    count_buffer_out_args.buffer = buffer_out;
 
     pthread_t reader_thread, input_count_thread, encryption_thread, output_count_thread, writer_thread;
+    printf("creating threads\r\n");
+    create_threads(&reader_thread, &input_count_thread, &encryption_thread, &output_count_thread, &writer_thread,
+                   &count_buffer_in_args, &count_buffer_out_args, input_file);
 
+/*
 
     if (pthread_create(&reader_thread, NULL, read_into_buffer, input_file))
     {
@@ -231,7 +399,12 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    if (pthread_create(&input_count_thread, NULL, count_buffer_in, buffer_in))
+    count_buffer_args_t count_buffer_in_args;
+    count_buffer_in_args.for_empty_buffer = for_empty_buffer_in_counter;
+    count_buffer_in_args.for_full_buffer = for_full_buffer_in_counter;
+    count_buffer_in_args.buffer = buffer_in;
+
+    if (pthread_create(&input_count_thread, NULL, count_buffer_chars, &count_buffer_in_args))
     {
         printf("ERROR creating input counter thread\r\n");
         exit(1);
@@ -244,31 +417,54 @@ int main(int argc, char *argv[])
     }
 
 
+    count_buffer_args_t count_buffer_out_args;
+    count_buffer_out_args.for_empty_buffer = for_empty_buffer_out_counter;
+    count_buffer_out_args.for_full_buffer = for_full_buffer_out_counter;
+    count_buffer_out_args.buffer = buffer_out;
 
+    if (pthread_create(&output_count_thread, NULL, count_buffer_chars, &count_buffer_out_args))
+    {
+        printf("ERROR creating input counter thread\r\n");
+        exit(1);
+    }
 
+    if (pthread_create(&writer_thread, NULL, write_buffer_out_to_file, NULL))
+    {
+        printf("ERROR creating file writer thread\r\n");
+        exit(1);
+    }
+*/
+    join_threads(&reader_thread, &input_count_thread, &encryption_thread, &output_count_thread, &writer_thread);
 
+/*
 
-
-
-
-    if (pthread_join(reader_thread, NULL)) // wait for the thread 1 to finish
+    if (pthread_join(reader_thread, NULL))
     {
         printf("ERROR joining reader thread \n");
     }
 
-    if (pthread_join(input_count_thread, NULL)) // wait for the thread 2 to finish
+    if (pthread_join(input_count_thread, NULL))
     {
         printf("ERROR joining input counter thread\n");
     }
 
-    if (pthread_join(encryption_thread, NULL)) // wait for the thread 3 to finish
+    if (pthread_join(encryption_thread, NULL))
     {
-        printf("ERROR joining input counter thread\n");
+        printf("ERROR joining encryption thread\n");
     }
+
+    if (pthread_join(output_count_thread, NULL))
+    {
+        printf("ERROR joining output counter thread\n");
+    }
+
+    if (pthread_join(writer_thread, NULL))
+    {
+        printf("ERROR joining writer thread\n");
+    }*/
 
     ////////////////////////////////////////////////////////////////
     ////////////////////////////////////////////////////////////////
-    print_buffer(buffer_out);
     ////////////////////////////////////////////////////////////////
     ////////////////////////////////////////////////////////////////
 
@@ -278,5 +474,10 @@ int main(int argc, char *argv[])
     free(for_full_buffer_in_counter);
     free(for_empty_buffer_in_encryptor);
     free(for_full_buffer_in_encryptor);
+
+    free(for_empty_buffer_out_counter);
+    free(for_full_buffer_out_counter);
+    free(for_empty_buffer_out_writer);
+    free(for_full_buffer_out_writer);
     pthread_exit(NULL);
 }
