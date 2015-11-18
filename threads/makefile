@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS= -pthread -Wall
+CFLAGS= -pthread -Wall -pedantic
 #-Wall -lpthread
 # -ansi
 
@@ -8,11 +8,11 @@ OBJECTS= main.o
 .PHONY: clean all
 
 all: $(OBJECTS)
-	gcc ${CFLAGS}  $(OBJECTS) -o main.a
+	gcc ${CFLAGS}  $(OBJECTS) -o "encrypt"
 
 %.o: %.c
 	gcc -c  -o $@ $< ${CFLAGS} 
 
 clean:
-	rm *.o *.a *.stackdump *.exe
+	rm -f *.o *.a *.stackdump *.exe encrypt
 

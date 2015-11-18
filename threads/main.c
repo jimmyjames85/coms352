@@ -4,7 +4,6 @@
 #include <ctype.h> /* isalpha */
 #include <semaphore.h>
 
-
 typedef struct buffer_struct
 {
     char *data;
@@ -28,25 +27,23 @@ void deleteBuffer(buffer_t *buffer)
 
 //#################################################################################################
 
-
 buffer_t *buffer_in;
 //////////////////////////////buffer_in semaphores///////////////////////////////////////////
-sem_t *for_empty_buffer_in_counter;
-sem_t *for_full_buffer_in_counter;
-sem_t *for_empty_buffer_in_encryptor;
-sem_t *for_full_buffer_in_encryptor;
+sem_t *sem_bin_counter_empty;
+sem_t *sem_bin_counter_full;
+sem_t *sem_bin_encryptor_empty;
+sem_t *sem_bin_in_encryptor_full;
 
 
 buffer_t *buffer_out;
 //////////////////////////////buffer_out semaphores///////////////////////////////////////////
-sem_t *for_empty_buffer_out_counter;
-sem_t *for_full_buffer_out_counter;
-sem_t *for_empty_buffer_out_writer;
-sem_t *for_full_buffer_out_writer;
+sem_t *sem_bout_counter_empty;
+sem_t *sem_bout_counter_full;
+sem_t *sem_bout_writer_empty;
+sem_t *sem_bout_writer_full;
 
 sem_t *print_order_mutex;
 //#################################################################################################
-
 
 void *read_into_buffer(void *cstr_input_file)
 {
@@ -58,7 +55,6 @@ void *read_into_buffer(void *cstr_input_file)
         fprintf(stderr, "Can't open file %s!\n", input_file);
         exit(1);
     }
-    printf("%s\r\n", input_file);
     int ch = '\0';
 
     int pos = 0;
@@ -74,17 +70,17 @@ void *read_into_buffer(void *cstr_input_file)
          * the buffer_in_encryptor
          */
 
-        sem_wait(for_empty_buffer_in_counter);
-        sem_wait(for_empty_buffer_in_encryptor);
+        sem_wait(sem_bin_counter_empty);
+        sem_wait(sem_bin_encryptor_empty);
         /////////////////CRITICAL CODE/////////////////////////////////////
         buffer_in->data[pos] = ch;
         pos = (pos + 1) % buffer_in->buffer_max_size;
         /////////////////CRITICAL CODE/////////////////////////////////////
-        sem_post(for_full_buffer_in_counter);//once for the counter
-        sem_post(for_full_buffer_in_encryptor);//another for the encrypt
+        sem_post(sem_bin_counter_full);//once for the counter
+        sem_post(sem_bin_in_encryptor_full);//another for the encrypt
     }
     fclose(fp);
-    return NULL;//TODO
+    pthread_exit(NULL);
 }
 
 
@@ -96,12 +92,12 @@ void *encrypt_buffer(void *unused_arg)
     char ch = '\0';
     while (EOF != ch)
     {
-        sem_wait(for_full_buffer_in_encryptor);
+        sem_wait(sem_bin_in_encryptor_full);
         /////////////////CRITICAL CODE TO READ char/////////////////////////////////////
         ch = buffer_in->data[pos_i];
         pos_i = (pos_i + 1) % buffer_in->buffer_max_size;
         /////////////////CRITICAL CODE TO READ char/////////////////////////////////////
-        sem_post(for_empty_buffer_in_encryptor);
+        sem_post(sem_bin_encryptor_empty);
 
 
         //Encrypt
@@ -135,17 +131,17 @@ void *encrypt_buffer(void *unused_arg)
          * the buffer_out_counter
          * the buffer_out_writer
          */
-        sem_wait(for_empty_buffer_out_counter);
-        sem_wait(for_empty_buffer_out_writer);
+        sem_wait(sem_bout_counter_empty);
+        sem_wait(sem_bout_writer_empty);
         /////////////////CRITICAL CODE TO transfer to buffer_out /////////////////////////////////////
         buffer_out->data[pos_o] = ch;
         pos_o = (pos_o + 1) % buffer_out->buffer_max_size;
         /////////////////CRITICAL CODE TO transfer to buffer_out /////////////////////////////////////
-        sem_post(for_full_buffer_out_counter);
-        sem_post(for_full_buffer_out_writer);
+        sem_post(sem_bout_counter_full);
+        sem_post(sem_bout_writer_full);
     }
 
-    return NULL;//TODO
+    pthread_exit(NULL);
 }
 
 /**
@@ -206,32 +202,37 @@ void *count_buffer_chars(void *count_buffer_args_t_ptr)
     }
     sem_post(print_order_mutex);
 
-    return NULL;//TODO
+    pthread_exit(NULL);
 }
 
-void *write_buffer_out_to_file(void *file_loc)
+void *write_buffer_out_to_file(void *cstr_file_loc)
 {
 
-    char temp[999];
-    int t = 0;
-    char ch = '\0';
+    FILE *fp = fopen(cstr_file_loc, "w");
+    if (fp == NULL)
+    {
+        fprintf(stderr, "Can't open file %s!\n", (char *) cstr_file_loc);
+        exit(1);
+    }
+
+
     int pos = 0;
+    char ch = '\0';
     while (EOF != ch)
     {
-        sem_wait(for_full_buffer_out_writer);
+        sem_wait(sem_bout_writer_full);
         /////////////////CRITICAL CODE/////////////////////////////////////
         ch = buffer_out->data[pos];
         pos = (pos + 1) % buffer_out->buffer_max_size;
         /////////////////CRITICAL CODE/////////////////////////////////////
-        sem_post(for_empty_buffer_out_writer);
-        temp[t++] = ch;
+        sem_post(sem_bout_writer_empty);
+
+        if(EOF!=ch)
+            fputc(ch, fp);
     }
 
-    temp[t - 1] = '\0';//overwrite the EOF char
-    printf("psuedowrite:\r\n+++%s+++\r\n", temp);
-
-    return NULL;//NULL
-
+    fclose(fp);
+    pthread_exit(NULL);
 }
 
 //#################################################################################################
@@ -252,8 +253,7 @@ typedef struct thread_struct
 } project_threads_t;
 
 
-void create_and_start_threads(project_threads_t *threads, count_buffer_args_t *count_buffer_in_args,
-                              count_buffer_args_t *count_buffer_out_args, char *input_file)
+void create_and_start_threads(project_threads_t *threads, count_buffer_args_t *count_buffer_in_args, count_buffer_args_t *count_buffer_out_args, char *input_file, char *output_file)
 {
 
     threads->reader_thread = malloc(sizeof(pthread_t));
@@ -287,12 +287,11 @@ void create_and_start_threads(project_threads_t *threads, count_buffer_args_t *c
         exit(1);
     }
 
-    if (pthread_create(threads->writer_thread, NULL, write_buffer_out_to_file, NULL))
+    if (pthread_create(threads->writer_thread, NULL, write_buffer_out_to_file,output_file))
     {
         printf("ERROR creating file writer thread\r\n");
         exit(1);
     }
-
 }
 
 
@@ -333,28 +332,28 @@ void join_and_free_threads(project_threads_t *threads)
 void create_and_setup_semaphores(unsigned int max_buffer_size)
 {
     //////////////////////////////buffer_in semaphores///////////////////////////////////////////
-    for_empty_buffer_in_counter = malloc(sizeof(sem_t));
-    for_full_buffer_in_counter = malloc(sizeof(sem_t));
-    sem_init(for_empty_buffer_in_counter, 0, max_buffer_size);
-    sem_init(for_full_buffer_in_counter, 0, 0);
+    sem_bin_counter_empty = malloc(sizeof(sem_t));
+    sem_bin_counter_full = malloc(sizeof(sem_t));
+    sem_init(sem_bin_counter_empty, 0, max_buffer_size);
+    sem_init(sem_bin_counter_full, 0, 0);
 
-    for_empty_buffer_in_encryptor = malloc(sizeof(sem_t));
-    for_full_buffer_in_encryptor = malloc(sizeof(sem_t));
-    sem_init(for_empty_buffer_in_encryptor, 0, max_buffer_size);
-    sem_init(for_full_buffer_in_encryptor, 0, 0);
+    sem_bin_encryptor_empty = malloc(sizeof(sem_t));
+    sem_bin_in_encryptor_full = malloc(sizeof(sem_t));
+    sem_init(sem_bin_encryptor_empty, 0, max_buffer_size);
+    sem_init(sem_bin_in_encryptor_full, 0, 0);
 
 
 
     //////////////////////////////buffer_out semaphores///////////////////////////////////////////
-    for_empty_buffer_out_counter = malloc(sizeof(sem_t));
-    for_full_buffer_out_counter = malloc(sizeof(sem_t));
-    sem_init(for_empty_buffer_out_counter, 0, max_buffer_size);
-    sem_init(for_full_buffer_out_counter, 0, 0);
+    sem_bout_counter_empty = malloc(sizeof(sem_t));
+    sem_bout_counter_full = malloc(sizeof(sem_t));
+    sem_init(sem_bout_counter_empty, 0, max_buffer_size);
+    sem_init(sem_bout_counter_full, 0, 0);
 
-    for_empty_buffer_out_writer = malloc(sizeof(sem_t));
-    for_full_buffer_out_writer = malloc(sizeof(sem_t));
-    sem_init(for_empty_buffer_out_writer, 0, max_buffer_size);
-    sem_init(for_full_buffer_out_writer, 0, 0);
+    sem_bout_writer_empty = malloc(sizeof(sem_t));
+    sem_bout_writer_full = malloc(sizeof(sem_t));
+    sem_init(sem_bout_writer_empty, 0, max_buffer_size);
+    sem_init(sem_bout_writer_full, 0, 0);
 
     ///////////////////////////print order semaphore/////////////////////////////
     /**
@@ -368,42 +367,35 @@ void create_and_setup_semaphores(unsigned int max_buffer_size)
 
 void free_semaphores()
 {
-    free(for_empty_buffer_in_counter);
-    free(for_full_buffer_in_counter);
-    free(for_empty_buffer_in_encryptor);
-    free(for_full_buffer_in_encryptor);
+    free(sem_bin_counter_empty);
+    free(sem_bin_counter_full);
+    free(sem_bin_encryptor_empty);
+    free(sem_bin_in_encryptor_full);
 
-    free(for_empty_buffer_out_counter);
-    free(for_full_buffer_out_counter);
-    free(for_empty_buffer_out_writer);
-    free(for_full_buffer_out_writer);
+    free(sem_bout_counter_empty);
+    free(sem_bout_counter_full);
+    free(sem_bout_writer_empty);
+    free(sem_bout_writer_full);
 
     free(print_order_mutex);
 }
 
-int prompt_for_buffer_size()
+unsigned prompt_for_buffer_size()
 {
-    int buffer;
-    printf("Enter buffer size: ");
-    scanf("%u", &buffer );
+    int buffer=0;
+    while(buffer<=0)
+    {
+        printf("Enter buffer size: ");
+        scanf("%d", &buffer);
+    }
     return buffer;
 }
-
-void printArgs(int argc, char *argv[])
-{
-    int i = 0;
-    for (i = 0; i < argc; i++)
-        printf("%s\r\n", argv[i]);
-
-
-}
-
 
 int main(int argc, char *argv[])
 {
 
-    char * format = "Please enter the correct command format.\r\n";
-    if(argc<2)
+    char *format = "Please enter the correct command format: encrypt inputfile outputfile\r\n";
+    if (argc < 3)
     {
         printf("%s", format);
         return -1;
@@ -411,6 +403,8 @@ int main(int argc, char *argv[])
 
     char *input_file = argv[1];
     char *out_file = argv[2];
+
+
     int max_buffer_size = prompt_for_buffer_size();
 
     buffer_in = newBuffer(max_buffer_size);
@@ -419,20 +413,23 @@ int main(int argc, char *argv[])
     create_and_setup_semaphores(max_buffer_size);
 
     count_buffer_args_t count_buffer_in_args;
-    count_buffer_in_args.for_empty_buffer = for_empty_buffer_in_counter;
-    count_buffer_in_args.for_full_buffer = for_full_buffer_in_counter;
+    count_buffer_in_args.for_empty_buffer = sem_bin_counter_empty;
+    count_buffer_in_args.for_full_buffer = sem_bin_counter_full;
     count_buffer_in_args.buffer = buffer_in;
 
     count_buffer_args_t count_buffer_out_args;
-    count_buffer_out_args.for_empty_buffer = for_empty_buffer_out_counter;
-    count_buffer_out_args.for_full_buffer = for_full_buffer_out_counter;
+    count_buffer_out_args.for_empty_buffer = sem_bout_counter_empty;
+    count_buffer_out_args.for_full_buffer = sem_bout_counter_full;
     count_buffer_out_args.buffer = buffer_out;
 
 
     project_threads_t threads;
 
-    create_and_start_threads(&threads, &count_buffer_in_args, &count_buffer_out_args, input_file);
+    create_and_start_threads(&threads, &count_buffer_in_args, &count_buffer_out_args, input_file, out_file);
+
     join_and_free_threads(&threads);
+
+
     free_semaphores();
 
     deleteBuffer(buffer_in);
