@@ -4,6 +4,11 @@
 #include <ctype.h> /* isalpha */
 #include <semaphore.h>
 
+
+/**
+ * Struct used to hold the char array
+ * and buffer size
+ */
 typedef struct buffer_struct
 {
     char *data;
@@ -11,6 +16,90 @@ typedef struct buffer_struct
 
 } buffer_t;
 
+
+/**
+ * This struct is used to hold pointers to the
+ * arguments needed for the method count_buffer_chars.
+ * Because the method is used by the pthread_create,
+ * it is only allowed one argument...hence this struct.
+ *
+ */
+typedef struct count_buffer_args_struct
+{
+    sem_t *count_wait_sem;
+    sem_t *count_post_sem;
+    buffer_t *buffer;
+
+} count_buffer_args_t;
+
+
+/**
+ * This program has 6 threads including main
+ * This struct holds all five created threads
+ */
+typedef struct thread_struct
+{
+    pthread_t *reader_thread;
+    pthread_t *input_count_thread;
+    pthread_t *encryption_thread;
+    pthread_t *output_count_thread;
+    pthread_t *writer_thread;
+} project_threads_t;
+
+
+/**
+ * This program has two buffers
+ * buffer_in is used for loaded the data from the input file
+ * buffer_out is used for storing the encrypted data and writing to the output file
+ */
+buffer_t *buffer_in;
+buffer_t *buffer_out;
+
+
+/**
+ *     buffer_in semaphores
+ *
+ * buffer_in has two consumers
+ * the character counter counts the occurrences of A-Z in buffer_in, and
+ * the encryptor reads buffer_in and encrypts the data
+ *
+ * Note:
+ * The encryptor also is a producer for the buffer_out
+ * It stores the encrypted data in the output buffer
+ */
+sem_t *sem_bin_counter_empty;
+sem_t *sem_bin_counter_full;
+sem_t *sem_bin_encryptor_empty;
+sem_t *sem_bin_in_encryptor_full;
+
+
+/**
+ *     buffer_out semaphores
+ *
+ *
+ * buffer_out has two consumers as well
+ * the character counter counts the occurrences of A-Z in buffer_out, and
+ * the writer writes the data in buffer_out to the output file.
+ */
+sem_t *sem_bout_counter_empty;
+sem_t *sem_bout_counter_full;
+sem_t *sem_bout_writer_empty;
+sem_t *sem_bout_writer_full;
+
+
+/**
+ * This mutex is used that the input/output char counters take turns
+ * printing their results to stdout
+ *
+ * (input char counts should be printed first)
+ */
+sem_t *print_order_mutex;
+
+
+/**
+ * mallocs a new buffer and a new char array
+ * and sets the buffer size to buffer_max_size
+ */
 buffer_t *newBuffer(unsigned buffer_max_size)
 {
     buffer_t *buffer = (buffer_t *) malloc(sizeof(buffer_t));
@@ -19,32 +108,19 @@ buffer_t *newBuffer(unsigned buffer_max_size)
     return buffer;
 }
 
+/**
+ * frees the buffer and the char array
+ */
 void deleteBuffer(buffer_t *buffer)
 {
     free(buffer->data);
     free(buffer);
 }
 
-//#################################################################################################
-
-buffer_t *buffer_in;
-//////////////////////////////buffer_in semaphores///////////////////////////////////////////
-sem_t *sem_bin_counter_empty;
-sem_t *sem_bin_counter_full;
-sem_t *sem_bin_encryptor_empty;
-sem_t *sem_bin_in_encryptor_full;
-
-
-buffer_t *buffer_out;
-//////////////////////////////buffer_out semaphores///////////////////////////////////////////
-sem_t *sem_bout_counter_empty;
-sem_t *sem_bout_counter_full;
-sem_t *sem_bout_writer_empty;
-sem_t *sem_bout_writer_full;
-
-sem_t *print_order_mutex;
-//#################################################################################################
-
+/**
+ * This method/thread is the producer for the buffer_in
+ * It reads in the input file and populates the buffer_in
+ */
 void *read_into_buffer(void *cstr_input_file)
 {
     char *input_file = (char *) cstr_input_file;
@@ -55,8 +131,8 @@ void *read_into_buffer(void *cstr_input_file)
         fprintf(stderr, "Can't open file %s!\n", input_file);
         exit(1);
     }
-    int ch = '\0';
 
+    int ch = 0;
     int pos = 0;
     while (EOF != ch)
     {
@@ -83,7 +159,10 @@ void *read_into_buffer(void *cstr_input_file)
     pthread_exit(NULL);
 }
 
-
+/**
+ * This method/thread is a consumer of buffer_in and a producer for buffer_out
+ * It is responsible for encrypting the input data according to the proj2 spec
+ */
 void *encrypt_buffer(void *unused_arg)
 {
     int s = 1;
@@ -145,20 +224,12 @@ void *encrypt_buffer(void *unused_arg)
 }
 
 /**
- * This struct is used to hold pointers to the
- * arguments needed for the method count_buffer_chars.
- * Because the method is used by the pthread_create,
- * it is only allowed one argument...hence this struct.
- *
+ * This method is used by two threads. One thread to count the input chars,
+ * and one thread to count the output chars. In order to call sem_wait and
+ * sem_post on the correct semaphores the void * count_buffer_args_t_ptr should
+ * be of type count_buffer_args_t. This struct should hold the buffer the counter
+ * should count and the correct semaphores to wait on and post to
  */
-typedef struct count_buffer_args_struct
-{
-    sem_t *for_full_buffer;
-    sem_t *for_empty_buffer;
-    buffer_t *buffer;
-
-} count_buffer_args_t;
-
 void *count_buffer_chars(void *count_buffer_args_t_ptr)
 {
     count_buffer_args_t *args = (count_buffer_args_t *) count_buffer_args_t_ptr;
@@ -170,12 +241,12 @@ void *count_buffer_chars(void *count_buffer_args_t_ptr)
     int pos = 0;
     while (EOF != ch)
     {
-        sem_wait(args->for_full_buffer);
+        sem_wait(args->count_wait_sem);
         /////////////////CRITICAL CODE/////////////////////////////////////
         ch = toupper(args->buffer->data[pos]);
         pos = (pos + 1) % args->buffer->buffer_max_size;
         /////////////////CRITICAL CODE/////////////////////////////////////
-        sem_post(args->for_empty_buffer);
+        sem_post(args->count_post_sem);
 
         i = ch - 'A';
         if (i >= 0 && i < 26)
@@ -183,13 +254,18 @@ void *count_buffer_chars(void *count_buffer_args_t_ptr)
     }
 
 
-    //print to stdout
+    //print counts to stdout
     if (args->buffer == buffer_in)
     {
         printf("Input file contains \r\n");
     }
     else if (args->buffer == buffer_out)
     {
+        /**
+         * We want the input counts to be displayed first so we
+         * wait on the print_order_mutex, only if we know we counting
+         * the buffer_out chars
+         */
         sem_wait(print_order_mutex);
         printf("Output file contains \r\n");
     }
@@ -205,6 +281,10 @@ void *count_buffer_chars(void *count_buffer_args_t_ptr)
     pthread_exit(NULL);
 }
 
+/**
+ * This method/thread is the buffer_out consumer that writes the encrypted
+ * data to the output file specified in the void * cstr_file_loc argument.
+ */
 void *write_buffer_out_to_file(void *cstr_file_loc)
 {
 
@@ -227,7 +307,7 @@ void *write_buffer_out_to_file(void *cstr_file_loc)
         /////////////////CRITICAL CODE/////////////////////////////////////
         sem_post(sem_bout_writer_empty);
 
-        if(EOF!=ch)
+        if (EOF != ch)
             fputc(ch, fp);
     }
 
@@ -235,25 +315,11 @@ void *write_buffer_out_to_file(void *cstr_file_loc)
     pthread_exit(NULL);
 }
 
-//#################################################################################################
-
-
-
-
 /**
- * Struct to hold all the threads
+ * Helper method that mallocs and creates the five threads
  */
-typedef struct thread_struct
-{
-    pthread_t *reader_thread;
-    pthread_t *input_count_thread;
-    pthread_t *encryption_thread;
-    pthread_t *output_count_thread;
-    pthread_t *writer_thread;
-} project_threads_t;
-
-
-void create_and_start_threads(project_threads_t *threads, count_buffer_args_t *count_buffer_in_args, count_buffer_args_t *count_buffer_out_args, char *input_file, char *output_file)
+void create_and_start_threads(project_threads_t *threads, count_buffer_args_t *count_buffer_in_args,
+                              count_buffer_args_t *count_buffer_out_args, char *input_file, char *output_file)
 {
 
     threads->reader_thread = malloc(sizeof(pthread_t));
@@ -287,14 +353,17 @@ void create_and_start_threads(project_threads_t *threads, count_buffer_args_t *c
         exit(1);
     }
 
-    if (pthread_create(threads->writer_thread, NULL, write_buffer_out_to_file,output_file))
+    if (pthread_create(threads->writer_thread, NULL, write_buffer_out_to_file, output_file))
     {
         printf("ERROR creating file writer thread\r\n");
         exit(1);
     }
 }
 
-
+/**
+ * Helper method that joins the threads and frees them
+ * when they've all finished
+ */
 void join_and_free_threads(project_threads_t *threads)
 {
     if (pthread_join(*(threads->reader_thread), NULL))
@@ -329,6 +398,14 @@ void join_and_free_threads(project_threads_t *threads)
     free(threads->writer_thread);
 }
 
+
+/**
+ * Helper method to mallocs each of the nine semaphores and initializes
+ * the empty semaphores with count equal to max_buffer_size; all others
+ * are initialized to 0.
+ *
+ * The ninth semaphore is the print_order_mutex which is initialized to 0
+ */
 void create_and_setup_semaphores(unsigned int max_buffer_size)
 {
     //////////////////////////////buffer_in semaphores///////////////////////////////////////////
@@ -365,6 +442,9 @@ void create_and_setup_semaphores(unsigned int max_buffer_size)
 
 }
 
+/**
+ * Helper method to free all 9 semaphores
+ */
 void free_semaphores()
 {
     free(sem_bin_counter_empty);
@@ -380,10 +460,14 @@ void free_semaphores()
     free(print_order_mutex);
 }
 
+/**
+ * Helper method that continuously prompts the user for
+ * a buffer size until the size entered is positive.
+ */
 unsigned prompt_for_buffer_size()
 {
-    int buffer=0;
-    while(buffer<=0)
+    int buffer = 0;
+    while (buffer <= 0)
     {
         printf("Enter buffer size: ");
         scanf("%d", &buffer);
@@ -391,49 +475,64 @@ unsigned prompt_for_buffer_size()
     return buffer;
 }
 
-int main(int argc, char *argv[])
+/**
+ * Asserts the arguments passed to the program are correct. This method will
+ * exit(1) if the arguments are incorrect.
+ */
+int assert_args(int argc, char **argv)
 {
-
     char *format = "Please enter the correct command format: encrypt inputfile outputfile\r\n";
     if (argc < 3)
     {
         printf("%s", format);
-        return -1;
+        exit(-1);
     }
+    return 0;
+
+}
+
+
+/**
+ *  Main thread used to create and start the other threads
+ */
+int main(int argc, char *argv[])
+{
+    //assert proper arguments
+    assert_args(argc, argv);
 
     char *input_file = argv[1];
     char *out_file = argv[2];
-
-
     int max_buffer_size = prompt_for_buffer_size();
-
-    buffer_in = newBuffer(max_buffer_size);
-    buffer_out = newBuffer(max_buffer_size);
-
-    create_and_setup_semaphores(max_buffer_size);
-
-    count_buffer_args_t count_buffer_in_args;
-    count_buffer_in_args.for_empty_buffer = sem_bin_counter_empty;
-    count_buffer_in_args.for_full_buffer = sem_bin_counter_full;
-    count_buffer_in_args.buffer = buffer_in;
-
-    count_buffer_args_t count_buffer_out_args;
-    count_buffer_out_args.for_empty_buffer = sem_bout_counter_empty;
-    count_buffer_out_args.for_full_buffer = sem_bout_counter_full;
-    count_buffer_out_args.buffer = buffer_out;
-
-
     project_threads_t threads;
 
+    //Create buffers and semaphores
+    buffer_in = newBuffer(max_buffer_size);
+    buffer_out = newBuffer(max_buffer_size);
+    create_and_setup_semaphores(max_buffer_size);
+
+    //counter arguments for buffer_in
+    count_buffer_args_t count_buffer_in_args;
+    count_buffer_in_args.count_post_sem = sem_bin_counter_empty;
+    count_buffer_in_args.count_wait_sem = sem_bin_counter_full;
+    count_buffer_in_args.buffer = buffer_in;
+
+    //counter arguments for buffer_out
+    count_buffer_args_t count_buffer_out_args;
+    count_buffer_out_args.count_post_sem = sem_bout_counter_empty;
+    count_buffer_out_args.count_wait_sem = sem_bout_counter_full;
+    count_buffer_out_args.buffer = buffer_out;
+
+    //Let's run!
     create_and_start_threads(&threads, &count_buffer_in_args, &count_buffer_out_args, input_file, out_file);
 
+    //Wait till encryption is done
     join_and_free_threads(&threads);
 
-
+    //Clean up...
     free_semaphores();
-
     deleteBuffer(buffer_in);
     deleteBuffer(buffer_out);
 
+    //Goodbye, world!
     pthread_exit(NULL);
 }
